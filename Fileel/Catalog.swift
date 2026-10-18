@@ -272,6 +272,12 @@ enum FileOperation: Hashable, Sendable {
 
 // pass immutable snapshots to workers so changing settings cannot alter a running job
 struct OperationOptions: Sendable, Equatable {
+    // the original file is only a valid fallback when no metadata change was requested
+    var changesMetadata: Bool {
+        !preserveMetadata || stripMetadata || removeLocation ||
+        [author, title, cameraMake, cameraModel, lensModel, latitude, longitude].contains { !$0.isEmpty }
+    }
+
     var quality = 1.0
     var preserveMetadata = true
     var width = 0

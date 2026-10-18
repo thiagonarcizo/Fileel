@@ -10,9 +10,7 @@ enum MediaEngine {
         var args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y"] + inputArguments + ["-i", input.path]
         if !filters.isEmpty { args += ["-vf", filters.joined(separator: ",")] }
         if !audioFilters.isEmpty { args += ["-af", audioFilters.joined(separator: ",")] }
-        if options.stripMetadata || !options.preserveMetadata { args += ["-map_metadata", "-1"] }
-        if !options.author.isEmpty { args += ["-metadata", "artist=\(options.author)"] }
-        if !options.title.isEmpty { args += ["-metadata", "title=\(options.title)"] }
+        args += try metadataArguments(options)
         switch ext {
         case "mp3": args += ["-vn", "-c:a", "libmp3lame", "-b:a", bitrate(options)]
         case "m4a": args += ["-vn", "-c:a", "aac", "-b:a", bitrate(options)]
@@ -41,6 +39,30 @@ enum MediaEngine {
 
     static func bitrate(_ options: OperationOptions) -> String { "\(Int(64 + options.quality * 192))k" }
 
+    // disable stream and chapter tag copying too, since global tags are only part of a container's metadata
+    static func metadataArguments(_ options: OperationOptions) throws -> [String] {
+        var args: [String] = []
+        if options.stripMetadata || !options.preserveMetadata {
+            args += ["-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1"]
+        }
+        if !options.author.isEmpty { args += ["-metadata", "artist=\(options.author)"] }
+        if !options.title.isEmpty { args += ["-metadata", "title=\(options.title)"] }
+        if options.removeLocation {
+            args += ["-metadata", "location=", "-metadata", "com.apple.quicktime.location.ISO6709="]
+        }
+        if !options.latitude.isEmpty || !options.longitude.isEmpty {
+            guard let latitude = Double(options.latitude), let longitude = Double(options.longitude),
+                  latitude.isFinite, longitude.isFinite, (-90...90).contains(latitude), (-180...180).contains(longitude) else {
+                throw FileelError.message("Enter latitude from −90 to 90 and longitude from −180 to 180.")
+            }
+            let location = String(format: "%+.6f%+.6f/", locale: Locale(identifier: "en_US_POSIX"), latitude, longitude)
+            args += ["-metadata", "location=\(location)", "-metadata", "com.apple.quicktime.location.ISO6709=\(location)"]
+        }
+        if !options.cameraMake.isEmpty { args += ["-metadata", "make=\(options.cameraMake)"] }
+        if !options.cameraModel.isEmpty { args += ["-metadata", "model=\(options.cameraModel)"] }
+        return args
+    }
+
     static func duration(_ input: URL, runner: ProcessRunner) throws -> Double {
         let text = try runner.run(Engines.require("ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", input.path])
         guard let duration = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)), duration.isFinite, duration > 0 else {
@@ -55,20 +77,7 @@ enum MediaEngine {
             try encode(input, output: output, options: options, runner: runner)
         case .metadata:
             // remux metadata edits so the audio and video streams keep their original encoded bytes
-            var args = ["-v", "error", "-nostdin", "-y", "-i", input.path, "-map", "0", "-c", "copy",
-                        "-map_metadata", options.stripMetadata ? "-1" : "0"]
-            if !options.author.isEmpty { args += ["-metadata", "artist=\(options.author)"] }
-            if !options.title.isEmpty { args += ["-metadata", "title=\(options.title)"] }
-            if options.removeLocation {
-                args += ["-metadata", "location=", "-metadata", "com.apple.quicktime.location.ISO6709="]
-            }
-            if !options.latitude.isEmpty, !options.longitude.isEmpty,
-               let latitude = Double(options.latitude), let longitude = Double(options.longitude) {
-                let location = String(format: "%+.6f%+.6f/", latitude, longitude)
-                args += ["-metadata", "location=\(location)", "-metadata", "com.apple.quicktime.location.ISO6709=\(location)"]
-            }
-            if !options.cameraMake.isEmpty { args += ["-metadata", "make=\(options.cameraMake)"] }
-            if !options.cameraModel.isEmpty { args += ["-metadata", "model=\(options.cameraModel)"] }
+            let args = ["-v", "error", "-nostdin", "-y", "-i", input.path, "-map", "0", "-c", "copy"] + (try metadataArguments(options))
             try runner.run(Engines.require("ffmpeg"), args + [output.path])
         case .resize:
             guard options.width > 0 || options.height > 0 else { throw FileelError.message("Enter at least one output dimension.") }
