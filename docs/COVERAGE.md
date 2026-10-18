@@ -40,7 +40,8 @@ Input aliases and format families are declared in `Fileel/Catalog.swift`. An exa
 - PDF organization now uses per-page thumbnail identities, reorder, duplicate, delete and individual rotation. Backend tests verify page order, selectable text, independent duplicate rotation and preservation of originals; drag-and-drop UI acceptance remains outstanding
 - Watermark preview and export use the same vector PDF renderer. Tests verify all four page rotations, artwork placement, selectable source/watermark text, chosen metadata and cancellation
 - A Developer ID archive has passed Apple notarization and Gatekeeper assessment. Stable/beta update integration, signed feeds and protected release automation exist, but installed-app updates and the final release pipeline are not yet accepted end to end
-- Engine bundling, exact codec inventory, dependency source/license packaging and clean-Mac acceptance remain outstanding. A clean CI runner exposed missing codecs in the minimal FFmpeg formula and a Vision execution failure; the full codec formula and CPU fallback are being validated
+- The runtime payload contains pinned ARM64 conversion tools, codec dependencies, upstream notices and a corresponding source archive. Its 223 native executables/libraries declare macOS 14 or earlier. All 56 native tests passed with Homebrew, `/usr/local` and the system LibreOffice installation denied to the test process. A separate clean-Mac installation and complete signed-app acceptance remain outstanding
+- Collage previews include every selected source and share gradient/rounded-corner rendering with exports. Full image decoding no longer silently shrinks originals wider than 16384 pixels
 
 ## Acceptance evidence
 

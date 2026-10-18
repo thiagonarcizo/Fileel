@@ -24,8 +24,8 @@ jobs:
     name: Sign, notarize and publish
     needs: validate
     if: github.repository == 'thiagonarcizo/Fileel' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
-    runs-on: xcode-27
-    timeout-minutes: 90
+    runs-on: macos-26
+    timeout-minutes: 120
     environment: ${{ github.ref_name == 'main' && 'production' || 'beta' }}
     permissions:
       contents: write
@@ -43,6 +43,22 @@ jobs:
           fi
       - name: Plan this channel's release
         run: python3 Scripts/release.py plan
+      - name: Prepare conversion engines without signing credentials
+        run: |
+          brew install cmake ninja pkgconf
+          python3 Scripts/build-runtimes.py
+          python3 Scripts/verify-runtimes.py build/runtime/payload
+          python3 -m venv build/dmg-tools
+          build/dmg-tools/bin/python3 -m pip install --require-hashes --only-binary=:all: -r Distribution/dmg-requirements.txt
+      - name: Test the prepared conversion engines
+        run: |
+          FILEEL_FFMPEG="$PWD/build/runtime/payload/MacOS/ffmpeg" \
+          FILEEL_FFPROBE="$PWD/build/runtime/payload/MacOS/ffprobe" \
+          FILEEL_GS="$PWD/build/runtime/payload/MacOS/gs" \
+          FILEEL_PANDOC="$PWD/build/runtime/payload/MacOS/pandoc" \
+          FILEEL_7ZZ="$PWD/build/runtime/payload/MacOS/7zz" \
+          FILEEL_SOFFICE="$PWD/build/runtime/payload/Helpers/LibreOffice.app/Contents/MacOS/soffice" swift test
+          python3 Scripts/verify-runtimes.py build/runtime/payload
       - name: Sign, notarize and package
         env:
           FILEEL_CERTIFICATE_P12: ${{ secrets.FILEEL_CERTIFICATE_P12 }}

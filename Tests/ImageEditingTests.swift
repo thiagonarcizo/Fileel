@@ -89,6 +89,40 @@ final class ImageEditingTests: XCTestCase {
         XCTAssertGreaterThan(try color(result, x: 220, y: 120).blueComponent, 0.8)
     }
 
+    func testCollageUsesEveryImageAndRespectsGradientAndCornerRadius() throws {
+        var options = OperationOptions()
+        options.width = 100; options.height = 100; options.padding = 10; options.columns = 2
+        options.backgroundStyle = "gradient"; options.backgroundHex = "FF0000"; options.backgroundEndHex = "00FF00"
+        options.cornerRadius = 20
+        let red = try ImageEngine.context(width: 100, height: 100)
+        red.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        red.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        let square = try ImageEngine.context(width: 100, height: 100)
+        square.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        square.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        let collage = try ImageEngine.collage([red.makeImage()!, square.makeImage()!], options: options)
+        XCTAssertEqual(collage.width, 230); XCTAssertEqual(collage.height, 120)
+        XCTAssertGreaterThan(try color(collage, x: 60, y: 60).redComponent, 0.95)
+        XCTAssertGreaterThan(try color(collage, x: 170, y: 60).blueComponent, 0.95)
+        XCTAssertLessThan(try color(collage, x: 121, y: 11).blueComponent, 0.05)
+        XCTAssertGreaterThan(try color(collage, x: 228, y: 118).greenComponent, 0.8)
+        XCTAssertThrowsError(try ImageEngine.collage([CGImage](), options: options))
+    }
+
+    func testFullImageDecodeDoesNotSilentlyShrinkWideOriginals() throws {
+        let width = 17000
+        let pixels = Data(repeating: 180, count: width * 4)
+        let provider = try XCTUnwrap(CGDataProvider(data: pixels as CFData))
+        let wide = try XCTUnwrap(CGImage(width: width, height: 1, bitsPerComponent: 8, bitsPerPixel: 32,
+                                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let input = folder.appendingPathComponent("wide.png")
+        try ImageEngine.write(wide, to: input, options: .init())
+        XCTAssertEqual(try ImageEngine.load(input).width, width)
+        XCTAssertEqual(try ImageEngine.load(input, maximumPixelSize: 200).width, 200)
+    }
+
     func testOperationGroupMatchesTheGlobalMenuSelection() {
         XCTAssertEqual(FileOperation.convert("png").mode, .convert)
         XCTAssertEqual(FileOperation.tool(.cropImage).mode, .tools)

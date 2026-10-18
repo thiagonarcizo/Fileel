@@ -13,6 +13,15 @@ if [[ ! -d "$fileel_framework/Versions/B" ]]; then
     echo "the expected Sparkle framework is missing" >&2
     exit 65
 fi
+# the office runtime keeps its upstream signature, while standalone tools receive this app's identity
+if [[ -f "$fileel_app/Contents/Resources/Engines/manifest.json" ]]; then
+    /usr/bin/codesign --verify --deep --strict "$fileel_app/Contents/Helpers/LibreOffice.app"
+    for fileel_engine in ffmpeg ffprobe pandoc 7zz gs; do
+        /usr/bin/codesign --force --sign "$fileel_identity" --options runtime --timestamp \
+            "$fileel_app/Contents/MacOS/$fileel_engine"
+        /usr/bin/codesign --verify --strict "$fileel_app/Contents/MacOS/$fileel_engine"
+    done
+fi
 for fileel_component in \
     "$fileel_framework/Versions/B/XPCServices/Downloader.xpc" \
     "$fileel_framework/Versions/B/XPCServices/Installer.xpc" \

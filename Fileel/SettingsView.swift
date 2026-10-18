@@ -111,14 +111,23 @@ struct SettingsView: View {
                         Text("Existing files are never overwritten by conversions.").font(.caption).foregroundStyle(.secondary)
                     }
                 } else if pane == "Engines" {
-                    Section("Installed Locally") {
+                    Section("Conversion Tools") {
                         ForEach(["ffmpeg", "ffprobe", "pandoc", "soffice", "7zz", "gs"], id: \.self) { engine in
                             VStack(alignment: .leading, spacing: 4) {
-                                Label(engine, systemImage: Engines.locate(engine) == nil ? "exclamationmark.circle" : "checkmark.circle")
-                                Text(Engines.locate(engine)?.path ?? "Not installed").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                                HStack {
+                                    Label(engineTitle(engine), systemImage: Engines.locate(engine) == nil ? "exclamationmark.circle" : "checkmark.circle")
+                                    Spacer()
+                                    Text(Engines.isBundled(engine) ? "Included" : Engines.locate(engine) == nil ? "Unavailable" : "Local")
+                                        .foregroundStyle(.secondary)
+                                }
+                                DisclosureGroup(engine) {
+                                    Text(Engines.locate(engine)?.path ?? "Not installed")
+                                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                                }.font(.caption).foregroundStyle(.secondary)
                             }
                         }
-                        Text("Media uses FFmpeg, documents use Pandoc and LibreOffice, and encrypted ZIP uses 7-Zip. Pages output requires Apple Pages. Engines are currently discovered on this Mac; release packaging is still in development.")
+                        Text(Engines.areBundled ? "These tools are included with Fileel and work offline. Creating Pages files also requires Apple Pages." :
+                             "This development build uses tools installed on this Mac. Creating Pages files requires Apple Pages.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } else {
@@ -127,6 +136,12 @@ struct SettingsView: View {
                         LabeledContent("Version", value: "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
                         LabeledContent("Installed Channel", value: updater.installedChannel.title)
                         LabeledContent("Architecture", value: "Apple Silicon")
+                        Link("Source Code", destination: URL(string: "https://github.com/thiagonarcizo/Fileel")!)
+                        if Engines.areBundled {
+                            Button("Third-Party Licenses…") {
+                                if let resources = Bundle.main.resourceURL { NSWorkspace.shared.open(resources.appendingPathComponent("Engines/Notices")) }
+                            }
+                        }
                     }
                     Section("Updates") {
                         Toggle("Automatically check for updates", isOn: $updater.automaticChecks)
@@ -150,6 +165,11 @@ struct SettingsView: View {
             .navigationTitle(pane)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func engineTitle(_ name: String) -> String {
+        ["ffmpeg": "Video & Audio", "ffprobe": "Media Inspection", "pandoc": "Documents",
+         "soffice": "Office Formats", "7zz": "Archives", "gs": "PDF Compression"][name] ?? name
     }
 }
 

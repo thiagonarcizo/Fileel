@@ -11,6 +11,7 @@ The `Release` workflow runs after every push or merged pull request to `main` or
 
 1. Run the native build, engine tests, release-tool tests, secret scan and Swift CodeQL analysis
 2. Check the environment's first-release acceptance gate
+   Build the pinned runtime payload and its corresponding source archive before importing signing secrets, test conversions with that payload, and verify that usage did not change the office runtime's signature
 3. Import the expected Developer ID certificate into an ephemeral runner keychain
 4. Archive the exact source commit with a build number shared across both channels, then sign Sparkle's nested helpers, framework and enclosing app from the inside out
 5. Require bundled conversion engines and the expected Sparkle public key
@@ -37,7 +38,7 @@ Configure these as **environment secrets** in both `production` and `beta`. Do n
 
 The signing certificate must belong to team `TQ87ZCU6H5`. Validate the API key's team and notarization permissions before configuring CI. GitHub does not let administrators download existing secret values from another repository; use their original local credentials
 
-The runner deletes the temporary keychain and key files even when signing or notarization fails. Only the DMG, SHA-256 checksum and public release metadata are uploaded. No personal access token or self-hosted runner is required
+The runner deletes the temporary keychain and key files even when signing or notarization fails. Public assets are the DMG, corresponding runtime sources, their SHA-256 checksums and release metadata. No private key, signing export or local user data is uploaded. No personal access token or self-hosted runner is required
 
 ## First-release gate
 

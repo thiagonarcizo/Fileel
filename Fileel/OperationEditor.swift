@@ -100,7 +100,9 @@ private struct OperationEditor: View {
             } else {
             HSplitView {
                 Group {
-                    if family == .image {
+                    if operation == .tool(.collage) {
+                        CollagePreviewView(files: files, options: options)
+                    } else if family == .image {
                         ImageEditorView(url: files[0], operation: operation, options: $options, dedicated: true, selectedAnnotation: $selectedMark,
                                         onDimensions: { imageSize = $0 })
                     } else if family == .video || family == .audio {

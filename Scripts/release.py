@@ -191,6 +191,12 @@ def build_release():
         raise ValueError("missing protected environment secrets: " + ", ".join(missing))
     directory = workspace()
     plan = json.loads((directory / "plan.json").read_text())
+    payload = ROOT / "build/runtime/payload"
+    sources = ROOT / "build/runtime/Fileel-Runtime-Sources.tar"
+    # validate public build inputs before importing any private signing material
+    run(["python3", ROOT / "Scripts/verify-runtimes.py", payload])
+    if not sources.is_file():
+        raise ValueError("the corresponding runtime source archive is missing")
     derived = directory / "DerivedData"
     archive = directory / "Fileel.xcarchive"
     output = directory / "public"
@@ -221,6 +227,8 @@ def build_release():
                  f"FILEEL_UPDATE_CHANNEL={plan['channel']}",
                  "OTHER_CODE_SIGN_FLAGS=--timestamp"])
             app = archive / "Products/Applications/Fileel.app"
+            for folder in ("MacOS", "Helpers", "Resources"):
+                run(["ditto", payload / folder, app / "Contents" / folder])
             run(["bash", ROOT / "Scripts/sign-app.sh", app, IDENTITY])
             with (app / "Contents/Info.plist").open("rb") as stream:
                 info = plistlib.load(stream)
@@ -249,6 +257,10 @@ def build_release():
             (directory / "plan.json").write_text(json.dumps(plan, indent=2))
             (output / (plan["filename"] + ".sha256")).write_text(f"{plan['sha256']}  {plan['filename']}\n")
             (output / "release.json").write_text(json.dumps(plan, indent=2) + "\n")
+            shutil.copy2(sources, output / sources.name)
+            with sources.open("rb") as stream:
+                checksum = hashlib.file_digest(stream, "sha256").hexdigest()
+            (output / (sources.name + ".sha256")).write_text(f"{checksum}  {sources.name}\n")
         finally:
             run(["security", "list-keychains", "-d", "user", "-s", *previous_keychains], stdout=subprocess.DEVNULL)
             subprocess.run(["security", "delete-keychain", str(keychain)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -287,7 +299,8 @@ def publish_release():
         capture([sparkle_tool(directory), "--ed-key-file", "-", feed_path], input=signing_key)
         capture([sparkle_tool(directory), "--ed-key-file", "-", "--verify", feed_path], input=signing_key)
         title = f"Fileel{' Beta' if plan['channel'] == 'beta' else ''} {plan['marketing']} ({plan['build']})"
-        assets = [directory / "public" / name for name in (plan["filename"], plan["filename"] + ".sha256", "release.json")]
+        assets = [directory / "public" / name for name in (plan["filename"], plan["filename"] + ".sha256", "release.json",
+                                                          "Fileel-Runtime-Sources.tar", "Fileel-Runtime-Sources.tar.sha256")]
         for asset in assets:
             if not asset.is_file():
                 raise ValueError("a public release artifact is missing")

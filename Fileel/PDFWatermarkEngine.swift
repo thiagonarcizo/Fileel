@@ -38,6 +38,9 @@ enum PDFWatermarkEngine {
                                                                rotate: Int32(page.rotation) - reference.rotationAngle,
                                                                preserveAspectRatio: true))
             context.drawPDFPage(reference)
+            for annotation in page.annotations where annotation.shouldPrint {
+                annotation.draw(with: .mediaBox, in: context)
+            }
             context.restoreGState()
             draw(in: context, bounds: box, options: options)
             context.endPDFPage()

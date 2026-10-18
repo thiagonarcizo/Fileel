@@ -9,13 +9,19 @@ import Vision
 enum ImageEngine {
     // CIContext is thread-safe and expensive to create, so previews and exports share one GPU context
     static let renderContext = CIContext(options: [.cacheIntermediates: false])
-    static func load(_ url: URL) throws -> CGImage {
-        if let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-           let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 16384
-           ] as CFDictionary) { return image }
+    static func load(_ url: URL, maximumPixelSize: Int? = nil) throws -> CGImage {
+        if let source = CGImageSourceCreateWithURL(url as CFURL, nil) {
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+            let originalSize = max(properties?[kCGImagePropertyPixelWidth] as? Int ?? 16384,
+                                   properties?[kCGImagePropertyPixelHeight] as? Int ?? 16384)
+            // full exports keep their original dimensions while thumbnail callers choose an explicit limit
+            let limit = maximumPixelSize.map { max(1, $0) } ?? originalSize
+            if let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: limit
+            ] as CFDictionary) { return image }
+        }
         // appkit can rasterize SVG inputs that imageio cannot decode
         guard let image = NSImage(contentsOf: url),
               let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
@@ -215,21 +221,33 @@ enum ImageEngine {
     }
 
     static func collage(_ urls: [URL], options: OperationOptions) throws -> CGImage {
-        let images = try urls.map(load)
+        let limit = max(options.width > 0 ? options.width : 800, options.height > 0 ? options.height : 800)
+        guard limit <= 16384 else { throw FileelError.message("Choose collage cells up to 16384 pixels.") }
+        // a cell never needs a full camera-sized decode when its output is only a thumbnail
+        return try collage(urls.map { try load($0, maximumPixelSize: limit) }, options: options)
+    }
+
+    static func collage(_ images: [CGImage], options: OperationOptions) throws -> CGImage {
+        guard !images.isEmpty else { throw FileelError.message("Choose images for the collage.") }
         let columns = min(max(1, options.columns), images.count)
         let rows = (images.count + columns - 1) / columns
         let cellWidth = options.width > 0 ? options.width : 800
         let cellHeight = options.height > 0 ? options.height : 800
         let gap = max(0, options.padding)
         let ctx = try context(width: columns * cellWidth + (columns + 1) * gap, height: rows * cellHeight + (rows + 1) * gap)
-        ctx.setFillColor(color(options.backgroundHex))
-        ctx.fill(CGRect(x: 0, y: 0, width: ctx.width, height: ctx.height))
+        try ImageDrawing.paintBackground(in: ctx, bounds: CGRect(x: 0, y: 0, width: ctx.width, height: ctx.height), options: options)
         for (index, image) in images.enumerated() {
             let scale = min(Double(cellWidth) / Double(image.width), Double(cellHeight) / Double(image.height))
             let w = Double(image.width) * scale, h = Double(image.height) * scale
             let x = Double(gap + (index % columns) * (cellWidth + gap)) + (Double(cellWidth) - w) / 2
             let y = Double(ctx.height - gap - (index / columns + 1) * cellHeight - (index / columns) * gap) + (Double(cellHeight) - h) / 2
-            ctx.draw(image, in: CGRect(x: x, y: y, width: w, height: h))
+            let bounds = CGRect(x: x, y: y, width: w, height: h)
+            let radius = min(max(0, options.cornerRadius), min(w, h) / 2)
+            ctx.saveGState()
+            ctx.addPath(CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil))
+            ctx.clip()
+            ctx.draw(image, in: bounds)
+            ctx.restoreGState()
         }
         return ctx.makeImage()!
     }
