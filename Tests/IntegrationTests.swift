@@ -122,7 +122,8 @@ final class IntegrationTests: XCTestCase {
         XCTAssertEqual(try PDFEngine.load(slidesPDF).pageCount, 1)
         let xlsx = try perform(.convert("xlsx"), [pdf])
         let sheet = try perform(.tool(.exportSheet), [xlsx])
-        XCTAssertTrue(try String(contentsOf: sheet, encoding: .utf8).contains("editable text"))
+        let exportedSheet = try String(contentsOf: sheet, encoding: .utf8)
+        XCTAssertTrue(exportedSheet.contains("editable text"), exportedSheet)
         let imageFolder = try perform(.convert("png"), [pdf])
         let firstPage = try FileManager.default.contentsOfDirectory(at: imageFolder, includingPropertiesForKeys: nil)[0]
         XCTAssertGreaterThan(try ImageEngine.load(firstPage).width, 2000)
