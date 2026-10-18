@@ -48,7 +48,7 @@ enum DocumentEngine {
                         try? FileManager.default.removeItem(at: editable)
                     }
                     if imported {
-                        if format == "pages" { try pages(editable, output: output) }
+                        if format == "pages" { try pages(editable, output: output, runner: runner) }
                         return output
                     }
                 }
@@ -66,7 +66,7 @@ enum DocumentEngine {
             try text.write(to: textFile, atomically: true, encoding: .utf8)
             if format == "pages" {
                 let docx = try convert(textFile, format: "docx", folder: folder, options: options, runner: runner)
-                try pages(docx, output: output)
+                try pages(docx, output: output, runner: runner)
             } else {
                 return try pandoc(textFile, output: output, runner: runner)
             }
@@ -87,7 +87,7 @@ enum DocumentEngine {
         }
         if format == "pages" {
             let docx = sourceFormat == "docx" ? input : try convert(input, format: "docx", folder: folder, options: options, runner: runner)
-            try pages(docx, output: output)
+            try pages(docx, output: output, runner: runner)
             return output
         }
         if ["pages", "rtf", "rtfd"].contains(sourceFormat), ["md", "epub", "txt", "html"].contains(format) {
@@ -192,28 +192,12 @@ enum DocumentEngine {
         try FileManager.default.moveItem(at: result, to: output)
     }
 
-    static func pages(_ input: URL, output: URL) throws {
+    static func pages(_ input: URL, output: URL, runner: ProcessRunner) throws {
         guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iWork.Pages") != nil else {
             throw FileelError.message("Apple Pages must be installed to create a PAGES document.")
         }
-        // apple events prompt for consent at runtime and target only this conversion's document
-        func quoted(_ value: String) -> String { "\"" + value.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"") + "\"" }
-        let script = """
-        tell application id "com.apple.iWork.Pages"
-            set convertedDocument to open POSIX file \(quoted(input.path))
-            try
-                save convertedDocument in POSIX file \(quoted(output.path))
-                close convertedDocument saving no
-            on error errorText number errorNumber
-                close convertedDocument saving no
-                error errorText number errorNumber
-            end try
-        end tell
-        """
-        var error: NSDictionary?
-        NSAppleScript(source: script)?.executeAndReturnError(&error)
-        if let error { throw FileelError.message("Pages could not save the document: \(error)") }
-        guard FileManager.default.fileExists(atPath: output.path) else { throw FileelError.message("Pages did not produce an output document.") }
+        // the child process inherits Fileel's automation consent and participates in job cancellation
+        try PagesExporter.export(input, output: output, runner: runner)
     }
 }
 
