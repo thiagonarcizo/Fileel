@@ -88,8 +88,8 @@ jobs:
       - name: Build for analysis
         run: |
           xcodebuild build -project Fileel.xcodeproj -scheme Fileel \
-            -configuration Release -destination 'platform=macOS,arch=arm64' \
-            -derivedDataPath "$RUNNER_TEMP/FileelAnalysis" CODE_SIGNING_ALLOWED=NO
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/FileelAnalysis" ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO
       - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
         with:
           category: swift
