@@ -8,7 +8,7 @@ Drag files in Finder, press **Shift** for conversions, **Command** for tools, or
 
 ## Build
 
-Requires Xcode 16 or newer and macOS 14 or newer. The app target is restricted to `arm64`
+Building requires Xcode 26 or newer for the Liquid Glass APIs and Icon Composer asset. The app runs on macOS 14 or newer, with native material fallbacks on older systems. The app target is restricted to `arm64`
 
 ```sh
 xcodebuild build -project Fileel.xcodeproj -scheme Fileel \
