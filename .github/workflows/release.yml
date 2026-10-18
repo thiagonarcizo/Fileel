@@ -54,6 +54,7 @@ jobs:
           brew install cmake ninja pkgconf
           python3 Scripts/build-runtimes.py
           python3 Scripts/verify-runtimes.py build/runtime/payload
+          rm -rf build/runtime/sources build/runtime/cmake build/runtime/prefix build/runtime/aom-source build/runtime/downloads build/runtime/completed
           python3 -m venv build/dmg-tools
           build/dmg-tools/bin/python3 -m pip install --require-hashes --only-binary=:all: -r Distribution/dmg-requirements.txt
       - name: Test the prepared conversion engines

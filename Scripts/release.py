@@ -237,6 +237,12 @@ def build_release():
             manifest = app / "Contents/Resources/Engines/manifest.json"
             if not manifest.is_file():
                 raise ValueError("bundled conversion engines are missing; refusing an incomplete public release")
+            secret_file(credentials / "Sparkle.key", os.environ["FILEEL_SPARKLE_PRIVATE_KEY"].encode())
+            # exercise the real installer and channel migration in a separate, disposable app identity
+            run(["python3", ROOT / "Scripts/test-installed-updates.py", "--directory", directory / "update-proof",
+                 "--sparkle", sparkle_tool(directory).parents[1], "--ed-key-file", credentials / "Sparkle.key",
+                 "--notary-key", credentials / "AuthKey.p8", "--key-id", os.environ["ASC_KEY_ID"],
+                 "--issuer", os.environ["ASC_ISSUER_ID"], "--identity", IDENTITY])
             run(["codesign", "--verify", "--deep", "--strict", app])
             package = directory / "notarization.zip"
             run(["ditto", "-c", "-k", "--keepParent", app, package])

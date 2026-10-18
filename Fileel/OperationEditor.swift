@@ -112,6 +112,7 @@ private struct OperationEditor: View {
                         PDFWatermarkPreview(url: files[0], options: options)
                     } else { FilePreviewView(url: files[0]) }
                 }.frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(!jobs.busy)
                 inspector.frame(width: 286).disabled(jobs.busy)
             }
             }
@@ -128,7 +129,11 @@ private struct OperationEditor: View {
 
             }.padding(.horizontal, 22).padding(.vertical, 12)
         }.background(Color(nsColor: .windowBackgroundColor))
-            .onChange(of: options) { _, _ in clipboardStatus = nil; jobID = nil }
+            .onChange(of: options) { _, _ in
+                clipboardStatus = nil
+                // playback callbacks must not detach an active save from its completion handler
+                if job?.state != .running && job?.state != .completed { jobID = nil }
+            }
             .onChange(of: job?.state) { _, state in if state == .completed { onFinished() } }
             .onDisappear { clipboardTask?.cancel() }
     }

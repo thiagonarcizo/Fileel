@@ -40,6 +40,12 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/FileelValidation" CODE_SIGNING_ALLOWED=NO
       - name: Verify the built update configuration
         run: python3 Scripts/release.py verify-bundle "$RUNNER_TEMP/FileelValidation/Build/Products/Release/Fileel.app"
+      - name: Compile the isolated update test host
+        run: |
+          swiftc -parse-as-library -target arm64-apple-macosx14.0 \
+            -F "$RUNNER_TEMP/FileelValidation/SourcePackages/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64" \
+            -framework Sparkle -Xlinker -rpath -Xlinker '@executable_path/../Frameworks' \
+            Scripts/UpdateSmokeHost.swift Fileel/UpdateChannel.swift -o "$RUNNER_TEMP/FileelUpdateProofHost"
 
   secrets:
     name: Secret scan
