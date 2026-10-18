@@ -8,6 +8,7 @@ final class OperationWindowController: NSWindowController, NSWindowDelegate {
     private let sessionID = UUID()
     static func show(files: [URL], operation: FileOperation) {
         guard !files.isEmpty else { return }
+        if operation == .tool(.listArchive) { ArchiveWindowController.show(files: files); return }
         // short text-only tasks don't need a preview window or a full inspector
         if QuickOperationDialog.showIfSupported(files: files, operation: operation) { return }
         let controller = OperationWindowController(files: files, operation: operation)

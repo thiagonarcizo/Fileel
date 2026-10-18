@@ -60,10 +60,6 @@ enum ArchiveEngine {
             let password = Data((options.password + "\n" + options.password + "\n").utf8)
             try runner.run(Engines.require("7zz"), ["a", "-tzip", "-mem=AES256", "-p", output.path, "--"] + names,
                            directory: folder, input: password)
-        } else if tool == .listArchive {
-            // the bundled reader handles plain gzip streams as well as multi-file archives
-            let listing = try runner.run(Engines.require("7zz"), ["l", "-ba", "--", input.path])
-            try listing.write(to: output, atomically: true, encoding: .utf8)
         } else {
             let result = try runner.run(Engines.require("7zz"), ["t", "--", input.path])
             try result.write(to: output, atomically: true, encoding: .utf8)

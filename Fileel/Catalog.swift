@@ -106,7 +106,7 @@ enum FileTool: String, CaseIterable, Identifiable, Sendable {
         case .shiftSubtitles: return "Shift Subtitle Timing…"
         case .speedSubtitles: return "Change Subtitle Speed…"
         case .joinSubtitles: return "Join Subtitles"
-        case .listArchive: return "List Archive Contents"
+        case .listArchive: return "Browse Archive"
         case .testArchive: return "Test Archive Integrity"
         case .encryptArchive: return "Create Encrypted ZIP…"
         }
@@ -154,7 +154,7 @@ enum FileTool: String, CaseIterable, Identifiable, Sendable {
     }
     var grouped: Bool { [.createPDF, .collage, .mergePDF, .joinVideos, .joinAudio, .compareDocuments, .joinSubtitles].contains(self) }
     var needsOptions: Bool {
-        ![.createPDF, .normalize, .mute, .joinVideos, .mergePDF, .splitPDF, .extract, .removeBackground, .ocrImage, .extractAudio, .extractSubtitles, .joinAudio, .ocrPDF, .wordCount, .compareDocuments, .cleanFormatting, .joinSubtitles, .listArchive, .testArchive].contains(self)
+        ![.createPDF, .normalize, .mute, .joinVideos, .mergePDF, .splitPDF, .extract, .removeBackground, .ocrImage, .extractAudio, .extractSubtitles, .joinAudio, .ocrPDF, .wordCount, .compareDocuments, .cleanFormatting, .joinSubtitles, .testArchive].contains(self)
     }
 }
 

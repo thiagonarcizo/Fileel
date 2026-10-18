@@ -19,6 +19,7 @@ enum ConversionEngine {
     }
 
     static func perform(_ operation: FileOperation, inputs: [URL], options: OperationOptions, runner: ProcessRunner) throws -> [URL] {
+        if operation == .tool(.listArchive) { throw FileelError.message("Archive contents open in the archive browser instead of creating a file.") }
         if operation == .tool(.ocrImage) { throw FileelError.message("Image OCR returns clipboard text instead of a file.") }
         if let issue = OperationRequirements.issue(for: operation, inputs: inputs, options: options) { throw FileelError.message(issue) }
         let transaction = try OutputTransaction(inputs: inputs, options: options)
@@ -99,7 +100,7 @@ enum ConversionEngine {
             try ArchiveEngine.extract(input, folder: output, runner: runner)
             return output
         }
-        if [.listArchive, .testArchive, .encryptArchive].contains(tool) {
+        if [.testArchive, .encryptArchive].contains(tool) {
             let output = folder.appendingPathComponent("\(stem) \(tool.rawValue).\(tool == .encryptArchive ? "zip" : "txt")")
             try ArchiveEngine.inspect(input, tool: tool, output: output, options: options, runner: runner)
             return output
