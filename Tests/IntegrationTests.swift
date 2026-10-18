@@ -162,8 +162,8 @@ final class IntegrationTests: XCTestCase {
         let encrypted = try perform(.tool(.encryptArchive), [input], options: options)
         let result = try runner.run(Engines.require("7zz"), ["t", "--", encrypted.path], input: Data((options.password + "\n").utf8))
         XCTAssertTrue(result.contains("Everything is Ok"))
-        let listing = try perform(.tool(.listArchive), [input])
-        XCTAssertTrue(try String(contentsOf: listing, encoding: .utf8).contains("test.txt"))
+        let listing = try ArchiveContents.read(input, runner: runner)
+        XCTAssertTrue(listing.entries.contains { $0.path == "test.txt" })
         let integrity = try perform(.tool(.testArchive), [input])
         XCTAssertTrue(try String(contentsOf: integrity, encoding: .utf8).contains("Everything is Ok"))
     }

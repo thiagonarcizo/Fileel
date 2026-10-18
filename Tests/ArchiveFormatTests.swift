@@ -24,11 +24,10 @@ final class ArchiveFormatTests: XCTestCase {
             let input = folder.appendingPathComponent("notes.txt.\(ext)")
             try runner.run(URL(fileURLWithPath: "/usr/bin/gzip"), ["-n", "-c", source.path], output: input)
             let original = try Data(contentsOf: input)
-            for tool in [FileTool.listArchive, .testArchive] {
-                let output = try perform(.tool(tool), input)
-                let report = try String(contentsOf: output, encoding: .utf8)
-                XCTAssertTrue(report.contains(tool == .listArchive ? "notes.txt" : "Everything is Ok"))
-            }
+            let listing = try ArchiveContents.read(input, runner: runner)
+            XCTAssertEqual(listing.entries.map(\.path), ["notes.txt"])
+            let output = try perform(.tool(.testArchive), input)
+            XCTAssertTrue(try String(contentsOf: output, encoding: .utf8).contains("Everything is Ok"))
             let extracted = try perform(.tool(.extract), input)
             XCTAssertEqual(try Data(contentsOf: extracted.appendingPathComponent("notes.txt")), bytes)
             for format in ["zip", "tar"] {
@@ -59,6 +58,52 @@ final class ArchiveFormatTests: XCTestCase {
             }
             XCTAssertEqual(try Data(contentsOf: archive), original)
         }
+    }
+
+    // browsing must preserve unicode paths, infer folders, and leave the source directory untouched
+    func testZipBrowsingAndExtractionBesideOriginal() throws {
+        let source = folder.appendingPathComponent("source")
+        let nested = source.appendingPathComponent("Photos/東京")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: source.appendingPathComponent("Empty folder"), withIntermediateDirectories: true)
+        let bytes = Data("portrait fixture".utf8)
+        try bytes.write(to: nested.appendingPathComponent("photo = 01.txt"))
+        let input = folder.appendingPathComponent("Delivery.zip")
+        try runner.run(URL(fileURLWithPath: "/usr/bin/ditto"), ["-c", "-k", "--norsrc", "--noextattr", source.path, input.path])
+        let before = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+        let original = try Data(contentsOf: input)
+        let contents = try ArchiveContents.read(input, runner: runner)
+        XCTAssertEqual(contents.fileCount, 1)
+        XCTAssertEqual(contents.folderCount, 3)
+        XCTAssertEqual(contents.expandedSize, Int64(bytes.count))
+        XCTAssertEqual(contents.children(of: "").map(\.name), ["Empty folder", "Photos"])
+        XCTAssertEqual(contents.children(of: "Photos/東京").map(\.name), ["photo = 01.txt"])
+        XCTAssertEqual(contents.children(of: "", matching: "photo =").map(\.path), ["Photos/東京/photo = 01.txt"])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(), before)
+        XCTAssertThrowsError(try ConversionEngine.perform(.tool(.listArchive), inputs: [input], options: .init(), runner: runner))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(), before)
+
+        let first = try XCTUnwrap(ConversionEngine.perform(.tool(.extract), inputs: [input], options: .init(), runner: runner).first)
+        let second = try XCTUnwrap(ConversionEngine.perform(.tool(.extract), inputs: [input], options: .init(), runner: runner).first)
+        XCTAssertEqual(first.deletingLastPathComponent().path, folder.path)
+        XCTAssertNotEqual(first, second)
+        for extracted in [first, second] {
+            XCTAssertEqual(try Data(contentsOf: extracted.appendingPathComponent("Photos/東京/photo = 01.txt")), bytes)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: extracted.appendingPathComponent("Empty folder").path))
+        }
+        XCTAssertEqual(try Data(contentsOf: input), original)
+    }
+
+    // implicit folders need the same totals and navigation as explicitly stored ones
+    func testTechnicalListingInfersFoldersAndRejectsUnsafePaths() throws {
+        let contents = try ArchiveContents.parse("Path = Photos/東京/a.txt\nFolder = -\nSize = 12\n\nPath = Photos/b.txt\nFolder = -\nSize = 8\n")
+        XCTAssertEqual(contents.folderCount, 2)
+        XCTAssertEqual(contents.entries.first { $0.path == "Photos" }?.size, 20)
+        XCTAssertEqual(contents.entries.first { $0.path == "Photos/東京" }?.size, 12)
+        XCTAssertThrowsError(try ArchiveContents.parse("Path = ../outside.txt\nSize = 1\n"))
+        XCTAssertThrowsError(try ArchiveContents.parse("Path = /outside.txt\nSize = 1\n"))
+        XCTAssertThrowsError(try ArchiveContents.parse("Path = Photos\nFolder = -\n\nPath = Photos/a.txt\nSize = 1\n"))
+        XCTAssertTrue(try ArchiveContents.parse("").entries.isEmpty)
     }
 
     private func perform(_ operation: FileOperation, _ input: URL) throws -> URL {

@@ -167,6 +167,7 @@ final class DropWheelView: NSView {
 
     // opening and closing use the same center-anchored transform as the native glass content
     func animateOpening() {
+        SelectionFeedback.prepare()
         presentation.expanded = false
         DispatchQueue.main.async { [weak self] in self?.presentation.expanded = true }
     }
@@ -296,11 +297,15 @@ final class WheelPreviewController: NSWindowController {
 // only selection transitions trigger feedback and each channel has its own preference
 @MainActor
 enum SelectionFeedback {
+    static func prepare() {
+        if UserDefaults.standard.bool(forKey: "soundsEnabled") { WheelSelectionSound.shared.prepare() }
+    }
+
     static func play() {
         let defaults = UserDefaults.standard
         if defaults.object(forKey: "hapticsEnabled") as? Bool ?? true {
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
         }
-        if defaults.bool(forKey: "soundsEnabled") { NSSound(named: "Tink")?.play() }
+        if defaults.bool(forKey: "soundsEnabled") { WheelSelectionSound.shared.play() }
     }
 }

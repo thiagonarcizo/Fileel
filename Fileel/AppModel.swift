@@ -86,7 +86,13 @@ final class AppModel: ObservableObject {
     func run(_ operation: FileOperation? = nil, inputs suppliedInputs: [URL]? = nil, options suppliedOptions: OperationOptions? = nil) {
         let inputs = suppliedInputs ?? files
         let snapshot = suppliedOptions ?? options
-        guard !busy, let operation = operation ?? selection, !inputs.isEmpty else { return }
+        guard let operation = operation ?? selection, !inputs.isEmpty else { return }
+        // browsing has its own window and never enters the file-writing job queue
+        if operation == .tool(.listArchive) {
+            ArchiveWindowController.show(files: inputs)
+            return
+        }
+        guard !busy else { return }
         if let issue = OperationRequirements.issue(for: operation, inputs: inputs, options: snapshot) { presentError(issue); return }
         selection = operation
         if case .action(let action) = operation, ![.duplicate, .checksum].contains(action) { perform(action); return }
