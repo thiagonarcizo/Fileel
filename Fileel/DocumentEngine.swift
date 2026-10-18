@@ -142,6 +142,15 @@ enum DocumentEngine {
               image.attr = pandoc.Attr()
               return image
             end
+
+            function Figure(figure)
+              -- keep captions visible without an HTML figure wrapper
+              local blocks = figure.content
+              if figure.caption and figure.caption.long then
+                blocks:extend(figure.caption.long)
+              end
+              return blocks
+            end
             """
             try script.write(to: filter, atomically: true, encoding: .utf8)
             args += ["--to", "gfm", "--extract-media=assets", "--lua-filter", filter.path]
