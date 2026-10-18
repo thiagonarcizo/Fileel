@@ -10,7 +10,7 @@ https://github.com/user-attachments/assets/6b31c486-85f5-4b25-9001-1300ad8d5c84
 </p>
 
 <p align="center">
-  <a href="https://github.com/thiagonarcizo/Fileel/releases">Releases</a> ·
+  <a href="https://github.com/thiagonarcizo/Fileel/releases">Download</a> ·
   <a href="#one-drag-three-shortcuts">How it works</a> ·
   <a href="#made-for-your-mac">Features</a> ·
   <a href="CONTRIBUTING.md">Contribute</a> ·
@@ -33,17 +33,9 @@ Drop onto an option to continue. Click the center or press **Esc** to close. Sho
 
 ## Made for your Mac
 
-**A quiet place in the menu bar.** Fileel stays close when you need it, with no Dock icon. Its interface follows your Mac's accent color and appearance.
-
-**Tools with room to work.** Photos, video and PDFs open in editors designed for the task. Drag crop handles, draw an arrow directly on an image, or reorder PDF pages by moving their thumbnails.
-
-**See the size before you compress.** Choose a reduction for photos, PDFs and video before saving. Video sizes are estimates; image and PDF previews measure generated copies. Some files have less room to shrink than others.
-
-**Keep the original.** Editing and conversion save new copies. Copy an edited image straight to the clipboard, or extract text from a photo without creating another file.
-
-**A little tactile feedback.** Feel each selection on a compatible trackpad. Haptics and selection sounds have separate settings; sounds start off.
-
-**Files that stay within reach.** A single floating shelf holds the files you add. Move it wherever it fits, then drag a file back into your workflow.
+- **Feels at home.** A quiet menu bar app with your Mac’s accent color, native materials and optional trackpad haptics.
+- **Preview, then save.** Focused photo, video and PDF editors, compression size previews, and new copies that keep your originals safe.
+- **Stay in flow.** One movable Floating Files shelf, edited images on your clipboard, and text extraction without extra files.
 
 ## A useful set of tools
 
@@ -64,7 +56,7 @@ See the [format and acceptance checklist](docs/COVERAGE.md) for the detailed sco
 
 Fileel targets **Apple silicon** and **macOS 14 or later**. Native Liquid Glass is available on macOS 26 and later, with native materials on earlier systems.
 
-Once available, open the DMG from [Releases](https://github.com/thiagonarcizo/Fileel/releases), drag Fileel into Applications, and launch it. Permission guidance appears during onboarding.
+Once available, open the DMG from [Download](https://github.com/thiagonarcizo/Fileel/releases), drag Fileel into Applications, and launch it. Permission guidance appears during onboarding.
 
 Fileel includes **Check for Updates** and automatic update checks. Stable and beta have separate update feeds; choose a channel in Settings → About. Leaving beta stops beta updates immediately and keeps your current installation until a newer stable build is available. Your preferences stay with you.
 
