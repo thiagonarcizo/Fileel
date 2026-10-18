@@ -273,7 +273,7 @@ def gh_json(args):
 def rehearsal_tag(run_id, attempt):
     if not re.fullmatch(r"[1-9]\d*", run_id) or not re.fullmatch(r"[1-9]\d*", attempt):
         raise ValueError("a rehearsal requires a valid workflow run and attempt")
-    return f"verification-{run_id}-{attempt}"
+    return f"ci-verification-{run_id}-{attempt}"
 
 
 def rehearse_release():
@@ -284,6 +284,10 @@ def rehearse_release():
     if plan["sha"] != os.environ.get("GITHUB_SHA") or plan["branch"] not in ("main", "dev"):
         raise ValueError("the verification source does not match the reviewed branch")
     tag = rehearsal_tag(os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"])
+    reference = f"refs/tags/{tag}"
+    matching = gh_json(["api", f"repos/{REPOSITORY}/git/matching-refs/tags/{tag}"])
+    if any(item["ref"] == reference for item in matching):
+        raise ValueError("the verification tag already exists; refusing to reuse it")
     public = directory / "public"
     names = [plan["filename"], plan["filename"] + ".sha256", "release.json",
              "Fileel-Runtime-Sources.tar", "Fileel-Runtime-Sources.tar.sha256"]
@@ -306,7 +310,13 @@ def rehearse_release():
         print("private signed/notarized upload and download verification passed; update feeds are unchanged")
     finally:
         # this run created the unique draft, so cleanup cannot remove an existing public release
-        run(["gh", "release", "delete", tag, "--repo", REPOSITORY, "--cleanup-tag", "--yes"])
+        run(["gh", "release", "delete", tag, "--repo", REPOSITORY, "--yes"])
+        matching = gh_json(["api", f"repos/{REPOSITORY}/git/matching-refs/tags/{tag}"])
+        for item in matching:
+            if item["ref"] == reference:
+                if item["object"].get("type") != "commit" or item["object"].get("sha") != plan["sha"]:
+                    raise ValueError("the verification tag changed unexpectedly; leaving it untouched")
+                run(["gh", "api", "--method", "DELETE", f"repos/{REPOSITORY}/git/{reference}"])
 
 
 def publish_release():

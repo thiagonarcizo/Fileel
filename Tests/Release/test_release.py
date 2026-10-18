@@ -25,7 +25,8 @@ class ReleaseTests(unittest.TestCase):
                 release.publish_release()
 
     def test_rehearsal_tags_cannot_target_normal_release_tags(self):
-        self.assertEqual(release.rehearsal_tag("1234", "2"), "verification-1234-2")
+        self.assertEqual(release.rehearsal_tag("1234", "2"), "ci-verification-1234-2")
+        self.assertFalse(release.rehearsal_tag("1234", "2").startswith("v"))
         for run, attempt in [("v1.0", "1"), ("1234", "--force"), ("0", "1"), ("1234\n", "1")]:
             with self.assertRaises(ValueError):
                 release.rehearsal_tag(run, attempt)
@@ -41,6 +42,7 @@ class ReleaseTests(unittest.TestCase):
             environment = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REPOSITORY": release.REPOSITORY,
                            "GITHUB_SHA": plan["sha"], "GITHUB_RUN_ID": "1234", "GITHUB_RUN_ATTEMPT": "1"}
             with patch.dict(release.os.environ, environment), patch.object(release, "workspace", return_value=directory), \
+                    patch.object(release, "gh_json", return_value=[]), \
                     patch.object(release, "run", side_effect=RuntimeError("draft already exists")) as run:
                 with self.assertRaises(RuntimeError):
                     release.rehearse_release()
