@@ -22,7 +22,7 @@ enum ImageEngine {
                 kCGImageSourceThumbnailMaxPixelSize: limit
             ] as CFDictionary) { return image }
         }
-        // give vector inputs an explicit pixel canvas so a Retina display cannot double export dimensions
+        // give vector inputs an explicit pixel canvas so a retina display cannot double export dimensions
         guard let image = NSImage(contentsOf: url), image.size.width.isFinite, image.size.height.isFinite,
               image.size.width > 0, image.size.height > 0 else {
             throw FileelError.message("Cannot read \(url.lastPathComponent) as an image.")

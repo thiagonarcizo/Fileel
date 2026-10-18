@@ -196,7 +196,7 @@ enum DocumentEngine {
         guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iWork.Pages") != nil else {
             throw FileelError.message("Apple Pages must be installed to create a PAGES document.")
         }
-        // the child process inherits Fileel's automation consent and participates in job cancellation
+        // the child process inherits fileel's automation consent and participates in job cancellation
         try PagesExporter.export(input, output: output, runner: runner)
     }
 }
