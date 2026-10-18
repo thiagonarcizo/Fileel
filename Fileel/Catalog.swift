@@ -302,6 +302,8 @@ struct OperationOptions: Sendable, Equatable {
     var exposure = 0.0
     var saturation = 1.0
     var contrast = 1.0
+    // background margins use the shorter image side so portrait and landscape frames agree
+    var backgroundSpacingPercent = 6.0
     var padding = 40
     var columns = 2
     var text = ""
@@ -332,7 +334,6 @@ struct OperationOptions: Sendable, Equatable {
     var sheetName = ""
     var delimiter = ","
     var encoding = "utf8"
-    var renameTemplate = "{name}-{n}"
     var sheetOutput = "csv"
     var annotations: [ImageAnnotation] = []
     var backgroundStyle = "solid"

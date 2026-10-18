@@ -61,7 +61,7 @@ final class ImageEditingTests: XCTestCase {
 
     func testGradientAndRoundedBackgroundAreRenderedInTheExport() throws {
         var options = OperationOptions()
-        options.padding = 20
+        options.backgroundSpacingPercent = 10
         options.cornerRadius = 60
         options.backgroundStyle = "gradient"
         options.backgroundHex = "FF0000"
@@ -83,10 +83,108 @@ final class ImageEditingTests: XCTestCase {
         let backdrop = folder.appendingPathComponent("background.png")
         try ImageEngine.write(ctx.makeImage()!, to: backdrop, options: .init())
         var options = OperationOptions()
-        options.backgroundStyle = "image"; options.backgroundImage = backdrop; options.padding = 20
+        options.backgroundStyle = "image"; options.backgroundImage = backdrop; options.backgroundSpacingPercent = 10
         let result = try ImageDrawing.background(image, options: options)
         XCTAssertGreaterThan(try color(result, x: 2, y: 2).redComponent, 0.95)
         XCTAssertGreaterThan(try color(result, x: 220, y: 120).blueComponent, 0.8)
+    }
+
+    // proportional frames keep all source pixels and use one equal margin on every side
+    func testBackgroundSpacingUsesSixPercentOfTheShorterSideByDefault() throws {
+        let options = OperationOptions()
+        XCTAssertEqual(options.backgroundSpacingPercent, 6)
+        for (width, height) in [(400, 200), (200, 400), (200, 200)] {
+            let ctx = try ImageEngine.context(width: width, height: height)
+            ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            let result = try ImageDrawing.background(XCTUnwrap(ctx.makeImage()), options: options)
+            XCTAssertEqual(result.width, width + 24)
+            XCTAssertEqual(result.height, height + 24)
+            for (x, y) in [(11, height / 2 + 12), (width + 12, height / 2 + 12), (width / 2 + 12, 11), (width / 2 + 12, height + 12)] {
+                XCTAssertGreaterThan(try color(result, x: x, y: y).redComponent, 0.95)
+            }
+            XCTAssertLessThan(try color(result, x: 12, y: 12).redComponent, 0.05)
+            XCTAssertLessThan(try color(result, x: width + 11, y: height + 11).redComponent, 0.05)
+        }
+        var edge = options
+        edge.backgroundSpacingPercent = 0
+        XCTAssertEqual(try ImageDrawing.background(image, options: edge).width, 400)
+        edge.backgroundSpacingPercent = 30
+        XCTAssertEqual(try ImageDrawing.background(image, options: edge).width, 520)
+        edge.backgroundSpacingPercent = .nan
+        XCTAssertThrowsError(try ImageDrawing.background(image, options: edge))
+    }
+
+    // thumbnail rendering must keep the percentage rather than scaling it as a pixel count
+    func testBackgroundPreviewAndExportHaveTheSameRelativeSpacing() async throws {
+        let ctx = try ImageEngine.context(width: 4000, height: 3000)
+        ctx.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: 4000, height: 3000))
+        let large = folder.appendingPathComponent("framed.png")
+        try ImageEngine.write(XCTUnwrap(ctx.makeImage()), to: large, options: .init())
+        let options = OperationOptions()
+        let preview = try await ImagePreviewRenderer().render(url: large, operation: .tool(.background), options: options)
+        let output = try ConversionEngine.perform(.tool(.background), inputs: [large], options: options, runner: ProcessRunner())[0]
+        let saved = try ImageEngine.load(output)
+        XCTAssertEqual(preview.rendered.width, 1744)
+        XCTAssertEqual(preview.rendered.height, 1344)
+        XCTAssertEqual(saved.width, 4360)
+        XCTAssertEqual(saved.height, 3360)
+        XCTAssertEqual(Double(preview.rendered.width) / Double(saved.width), 0.4, accuracy: 0.0001)
+        XCTAssertGreaterThan(try color(preview.rendered, x: 71, y: 200).redComponent, 0.95)
+        XCTAssertLessThan(try color(preview.rendered, x: 72, y: 200).redComponent, 0.05)
+        XCTAssertGreaterThan(try color(saved, x: 179, y: 500).redComponent, 0.95)
+        XCTAssertLessThan(try color(saved, x: 180, y: 500).redComponent, 0.05)
+    }
+
+    // asymmetric quadrants expose an unchanged preview or a mismatched flip direction
+    func testRotationPreviewClipboardAndSavedPhotoAgreeForEveryAngleAndFlip() async throws {
+        let ctx = try ImageEngine.context(width: 400, height: 200)
+        for (rect, fill) in [
+            (CGRect(x: 0, y: 0, width: 200, height: 100), CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)),
+            (CGRect(x: 200, y: 0, width: 200, height: 100), CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)),
+            (CGRect(x: 0, y: 100, width: 200, height: 100), CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1)),
+            (CGRect(x: 200, y: 100, width: 200, height: 100), CGColor(srgbRed: 1, green: 1, blue: 0, alpha: 1))
+        ] {
+            ctx.setFillColor(fill); ctx.fill(rect)
+        }
+        let original = try XCTUnwrap(ctx.makeImage())
+        let input = folder.appendingPathComponent("quadrants.png")
+        try ImageEngine.write(original, to: input, options: .init())
+        let renderer = ImagePreviewRenderer()
+        for rotation in [0, 90, 180, 270] {
+            for flip in [false, true] {
+                var options = OperationOptions()
+                options.rotation = rotation; options.flipHorizontal = flip
+                let frame = try await renderer.render(url: input, operation: .tool(.rotate), options: options)
+                let saved = try ImageEngine.load(ConversionEngine.perform(.tool(.rotate), inputs: [input], options: options, runner: ProcessRunner())[0])
+                let copied = try ImageEngine.clipboardPNG([input], tool: .rotate, options: options)
+                let source = try XCTUnwrap(CGImageSourceCreateWithData(copied as CFData, nil))
+                let clipboard = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+                let quarterTurn = rotation == 90 || rotation == 270
+                XCTAssertEqual(frame.rendered.width, quarterTurn ? 200 : 400)
+                XCTAssertEqual(frame.rendered.height, quarterTurn ? 400 : 200)
+                for result in [frame.rendered, saved, clipboard] {
+                    for x in [result.width / 4, result.width * 3 / 4] {
+                        for y in [result.height / 4, result.height * 3 / 4] {
+                            var point: (Int, Int)
+                            switch rotation {
+                            case 90: point = (y, 199 - x)
+                            case 180: point = (399 - x, 199 - y)
+                            case 270: point = (399 - y, x)
+                            default: point = (x, y)
+                            }
+                            if flip { point.0 = 399 - point.0 }
+                            let expected = try color(original, x: point.0, y: point.1)
+                            let actual = try color(result, x: x, y: y)
+                            XCTAssertEqual(actual.redComponent, expected.redComponent, accuracy: 0.01, "\(rotation)°, flip \(flip)")
+                            XCTAssertEqual(actual.greenComponent, expected.greenComponent, accuracy: 0.01)
+                            XCTAssertEqual(actual.blueComponent, expected.blueComponent, accuracy: 0.01)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     func testCollageUsesEveryImageAndRespectsGradientAndCornerRadius() throws {

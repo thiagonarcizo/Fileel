@@ -1,7 +1,7 @@
 import XCTest
 @testable import FileelCore
 
-// exercise job ownership and cancellation without launching Pages or changing its open documents
+// exercise job ownership and cancellation without launching pages or changing its open documents
 final class PagesExportTests: XCTestCase {
     private var folder: URL!
 
@@ -93,7 +93,7 @@ final class PagesExportTests: XCTestCase {
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) { runner.cancel() }
         XCTAssertThrowsError(try PagesExporter.export(input, output: output, runner: runner) { _, _, worker in
             calls += 1
-            // a plain delay exercises process termination without sending any event to Pages
+            // a plain delay exercises process termination without sending any event to pages
             try PagesExporter.runScript(calls == 1 ? "delay 30" : "return \"closed\"", arguments: [], runner: worker)
         }) { XCTAssertTrue($0 is CancellationError) }
         XCTAssertEqual(calls, 2)

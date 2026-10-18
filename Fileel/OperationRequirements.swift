@@ -37,6 +37,9 @@ enum OperationRequirements {
             return "Draw an area to cover or enable local detection."
         }
         if tool == .background, options.backgroundStyle == "image", options.backgroundImage == nil { return "Choose an image for the background." }
+        if tool == .background, !options.backgroundSpacingPercent.isFinite || !(0...30).contains(options.backgroundSpacingPercent) {
+            return "Choose background spacing from 0% to 30%."
+        }
         if [.protectPDF, .encryptArchive].contains(tool), options.password.isEmpty { return "Enter a password for the saved file." }
         if tool == .watermarkPDF, options.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Enter the watermark text." }
         if tool == .organizePDF, options.pdfPages.isEmpty, options.pageOrder.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Keep at least one page to save." }
