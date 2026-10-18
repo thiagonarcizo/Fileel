@@ -28,13 +28,8 @@ enum ExtraTools {
             guard let image = CIContext().createCGImage(ciImage, from: ciImage.extent) else { throw FileelError.message("Cannot render the foreground mask.") }
             try ImageEngine.write(image, to: output, options: options, source: input)
         } else if tool == .rotate {
-            let rotated = options.rotation == 90 || options.rotation == 270
-            let ctx = try ImageEngine.context(width: rotated ? original.height : original.width, height: rotated ? original.width : original.height)
-            ctx.translateBy(x: CGFloat(ctx.width) / 2, y: CGFloat(ctx.height) / 2)
-            ctx.rotate(by: -CGFloat(options.rotation) * .pi / 180)
-            if options.flipHorizontal { ctx.scaleBy(x: -1, y: 1) }
-            ctx.draw(original, in: CGRect(x: -CGFloat(original.width) / 2, y: -CGFloat(original.height) / 2, width: CGFloat(original.width), height: CGFloat(original.height)))
-            try ImageEngine.write(ctx.makeImage()!, to: output, options: options, source: input)
+            // preview, clipboard, and export all use the same photo transform
+            try ImageEngine.write(ImageEngine.edit(original, tool: .rotate, options: options), to: output, options: options, source: input)
         } else {
             try ImageEngine.write(ImageEngine.resized(original, options: options), to: output, options: options, source: input)
         }
@@ -151,18 +146,28 @@ enum ExtraTools {
 
 // filesystem actions share the same collision policy as conversions
 enum FileActions {
-    static func rename(_ files: [URL], template: String) throws {
-        guard !template.isEmpty, !template.contains("/"), !template.contains(":"), !template.contains("\0") else {
-            throw FileelError.message("Enter a filename template without path separators.")
+    // keep typed names literal and number batches without exposing filename template syntax
+    static func renameTargets(_ files: [URL], baseName: String) throws -> [URL] {
+        guard !baseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              baseName != ".", baseName != "..", !baseName.contains("/"),
+              !baseName.contains(":"), !baseName.contains("\0"), !baseName.contains("\n") else {
+            throw FileelError.message("Enter a name without slashes, colons, or line breaks.")
         }
-        let pairs = files.enumerated().map { index, file in
-            let name = template.replacingOccurrences(of: "{name}", with: file.deletingPathExtension().lastPathComponent)
-                .replacingOccurrences(of: "{n}", with: String(index + 1))
-            return (file, file.deletingLastPathComponent().appendingPathComponent(name).appendingPathExtension(file.pathExtension))
+        return files.enumerated().map { index, file in
+            let name = files.count > 1 ? "\(baseName) \(index + 1)" : baseName
+            let isDirectory = (try? file.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
+            let target = file.deletingLastPathComponent().appendingPathComponent(name)
+            return isDirectory || file.pathExtension.isEmpty ? target : target.appendingPathExtension(file.pathExtension)
         }
+    }
+
+    // preflight the entire batch before moving anything and roll back if a later move fails
+    static func rename(_ files: [URL], baseName: String) throws -> [URL] {
+        let targets = try renameTargets(files, baseName: baseName)
+        let pairs = Array(zip(files, targets))
         guard Set(pairs.map { $0.1 }).count == pairs.count,
               pairs.allSatisfy({ $0.0 == $0.1 || !FileManager.default.fileExists(atPath: $0.1.path) }) else {
-            throw FileelError.message("The template produces a filename that already exists.")
+            throw FileelError.message("A file with this name already exists. Choose another name.")
         }
         var moved: [(URL, URL)] = []
         do {
@@ -174,6 +179,7 @@ enum FileActions {
             for (source, target) in moved.reversed() { try? FileManager.default.moveItem(at: target, to: source) }
             throw error
         }
+        return targets
     }
 
     static func checksum(_ input: URL, runner: ProcessRunner) throws -> String {

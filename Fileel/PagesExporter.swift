@@ -11,7 +11,7 @@ enum PagesExporter {
         let source = workspace.appendingPathComponent("Source.docx")
         // follow a source symlink before copying so the owned document cannot point back to the original
         try FileManager.default.copyItem(at: input.resolvingSymlinksInPath(), to: source)
-        // Pages resolves aliases, so use the same canonical paths for cancellation cleanup
+        // pages resolves aliases, so use the same canonical paths for cancellation cleanup
         let arguments = [source.resolvingSymlinksInPath().path, output.resolvingSymlinksInPath().path]
         do {
             try execute(exportScript, arguments, runner)

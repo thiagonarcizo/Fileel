@@ -56,6 +56,13 @@ struct ImageEditorView: View {
 
     private var annotationMode: Bool { operation == .tool(.annotateImage) || operation == .tool(.redactImage) }
     private var cropMode: Bool { operation == .tool(.cropImage) }
+    // report the rotated output orientation while keeping crop coordinates in source space
+    private var displayDimensions: CGSize {
+        if operation == .tool(.rotate), !compareOriginal, [90, 270].contains(options.rotation) {
+            return CGSize(width: preview.dimensions.height, height: preview.dimensions.width)
+        }
+        return preview.dimensions
+    }
     private var request: Request { Request(url: url, operation: operation, options: options) }
     private struct Request: Equatable { let url: URL; let operation: FileOperation?; let options: OperationOptions }
 
@@ -66,7 +73,7 @@ struct ImageEditorView: View {
                 if preview.rendering { ProgressView().controlSize(.mini).accessibilityLabel("Rendering preview") }
                 Spacer()
                 if preview.dimensions.width > 0 {
-                    Text("\(Int(preview.dimensions.width)) × \(Int(preview.dimensions.height))")
+                    Text("\(Int(displayDimensions.width)) × \(Int(displayDimensions.height))")
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                 }
                 Toggle("Original", isOn: $compareOriginal).toggleStyle(.button).controlSize(.small)

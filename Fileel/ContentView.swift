@@ -40,12 +40,8 @@ struct ContentView: View {
         }
         .frame(minWidth: 820, maxWidth: .infinity, minHeight: 600, maxHeight: .infinity)
         .onAppear {
-            model.showWorkspace = { WorkspaceWindowController.shared.show() }
             if model.selection == nil { model.options = model.defaults() }
         }
-        .alert("Operation Couldn’t Finish", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
-            Button("OK", role: .cancel) { model.error = nil }
-        } message: { Text(model.error ?? "") }
     }
 
     private var workspace: some View {
@@ -190,8 +186,7 @@ struct OperationOptionsView: View {
     var body: some View {
         Form {
             if operation == .action(.rename) {
-                TextField("Filename Template", text: $options.renameTemplate)
-                Text("Use {name} for the original name and {n} for its number. The extension is kept.").font(.caption).foregroundStyle(.secondary)
+                Text("Enter a new name in the Rename dialog. File extensions are kept.").font(.caption).foregroundStyle(.secondary)
             } else if case .action = operation {
                 Text("This action applies to every selected file.").foregroundStyle(.secondary)
             } else {
@@ -289,7 +284,19 @@ struct OperationOptionsView: View {
                         if panel.runModal() == .OK { options.backgroundImage = panel.url }
                     }
                 }
-                Stepper("Spacing: \(options.padding) px", value: $options.padding, in: 0...300)
+                if tool == .background {
+                    HStack {
+                        Text("Spacing")
+                        Spacer()
+                        Text("\(options.backgroundSpacingPercent, specifier: "%.1f")%")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    ResettableSlider(title: "Spacing", value: $options.backgroundSpacingPercent, range: 0...30, defaultValue: 6, step: 0.1)
+                        .help("Percentage of the photo’s shorter side · Double-click to reset to 6%")
+                } else {
+                    Text("Spacing: \(options.padding) px")
+                    ResettableSlider(title: "Spacing", value: Binding(get: { Double(options.padding) }, set: { options.padding = Int($0) }), range: 0...300, defaultValue: 40, step: 1)
+                }
                 Text("Corner Radius: \(Int(options.cornerRadius)) px")
                 ResettableSlider(title: "Corner Radius", value: $options.cornerRadius, range: 0...300, defaultValue: 0)
                 if tool == .collage { Stepper("Columns: \(options.columns)", value: $options.columns, in: 1...12) }
