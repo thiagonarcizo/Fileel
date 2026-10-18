@@ -57,6 +57,20 @@ final class PDFFeatureTests: XCTestCase {
 
     func digest(_ url: URL) throws -> SHA256.Digest { SHA256.hash(data: try Data(contentsOf: url)) }
 
+    func testHighDPIExportScalesTheArtworkInsteadOfOnlyEnlargingTheBitmap() throws {
+        let page = try XCTUnwrap(PDFEngine.load(fixture()).page(at: 0))
+        let rendered = try PDFEngine.render(page, dpi: 144)
+        XCTAssertEqual(rendered.width, 480)
+        XCTAssertEqual(rendered.height, 640)
+        let bitmap = NSBitmapImageRep(cgImage: rendered)
+        let red = try XCTUnwrap(bitmap.colorAt(x: 60, y: 80)?.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(red.redComponent, 0.9)
+        XCTAssertLessThan(red.blueComponent, 0.1)
+        let blue = try XCTUnwrap(bitmap.colorAt(x: 400, y: 580)?.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(blue.blueComponent, 0.9)
+        XCTAssertLessThan(blue.redComponent, 0.1)
+    }
+
     func testOrganizerSavesOrderDuplicatesAndIndependentRotations() throws {
         let source = try fixture()
         let original = try digest(source)
