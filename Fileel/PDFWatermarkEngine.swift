@@ -25,23 +25,10 @@ enum PDFWatermarkEngine {
             try Task.checkCancellation()
             try checkCancellation?()
             guard let page = document.page(at: index) else { throw FileelError.message("A PDF page is unavailable.") }
-            guard let reference = page.pageRef else { throw FileelError.message("A PDF page could not be rendered.") }
-            let originalBox = reference.getBoxRect(.mediaBox)
-            var box = CGRect(origin: .zero, size: originalBox.size)
-            // use core graphics explicitly since pdfkit's drawing rotation differs between macos releases
-            let rotation = ((page.rotation % 360) + 360) % 360
-            if rotation == 90 || rotation == 270 { box.size = CGSize(width: box.height, height: box.width) }
+            var box = try PDFEngine.displayedBounds(page)
             let mediaBox = Data(bytes: &box, count: MemoryLayout<CGRect>.size)
             context.beginPDFPage([kCGPDFContextMediaBox: mediaBox] as CFDictionary)
-            context.saveGState()
-            context.concatenate(reference.getDrawingTransform(.mediaBox, rect: box,
-                                                               rotate: Int32(page.rotation) - reference.rotationAngle,
-                                                               preserveAspectRatio: true))
-            context.drawPDFPage(reference)
-            for annotation in page.annotations where annotation.shouldPrint {
-                annotation.draw(with: .mediaBox, in: context)
-            }
-            context.restoreGState()
+            try PDFEngine.draw(page, in: context, bounds: box)
             draw(in: context, bounds: box, options: options)
             context.endPDFPage()
         }

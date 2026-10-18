@@ -115,7 +115,8 @@ final class IntegrationTests: XCTestCase {
         }
         let exported = try perform(.convert("docx"), [pdf])
         let plain = try perform(.convert("txt"), [exported])
-        XCTAssertTrue(try String(contentsOf: plain, encoding: .utf8).contains("editable text"))
+        let exportedText = try String(contentsOf: plain, encoding: .utf8)
+        XCTAssertTrue(exportedText.contains("editable text"), exportedText)
         let pptx = try perform(.convert("pptx"), [pdf])
         let slidesPDF = try perform(.convert("pdf"), [pptx])
         XCTAssertEqual(try PDFEngine.load(slidesPDF).pageCount, 1)

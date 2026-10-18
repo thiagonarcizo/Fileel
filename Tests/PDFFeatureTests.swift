@@ -57,6 +57,20 @@ final class PDFFeatureTests: XCTestCase {
 
     func digest(_ url: URL) throws -> SHA256.Digest { SHA256.hash(data: try Data(contentsOf: url)) }
 
+    func testHighDPIExportScalesTheArtworkInsteadOfOnlyEnlargingTheBitmap() throws {
+        let page = try XCTUnwrap(PDFEngine.load(fixture()).page(at: 0))
+        let rendered = try PDFEngine.render(page, dpi: 144)
+        XCTAssertEqual(rendered.width, 480)
+        XCTAssertEqual(rendered.height, 640)
+        let bitmap = NSBitmapImageRep(cgImage: rendered)
+        let red = try XCTUnwrap(bitmap.colorAt(x: 60, y: 80)?.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(red.redComponent, 0.9)
+        XCTAssertLessThan(red.blueComponent, 0.1)
+        let blue = try XCTUnwrap(bitmap.colorAt(x: 400, y: 580)?.usingColorSpace(.sRGB))
+        XCTAssertGreaterThan(blue.blueComponent, 0.9)
+        XCTAssertLessThan(blue.redComponent, 0.1)
+    }
+
     func testOrganizerSavesOrderDuplicatesAndIndependentRotations() throws {
         let source = try fixture()
         let original = try digest(source)
@@ -142,6 +156,24 @@ final class PDFFeatureTests: XCTestCase {
         let runner = ProcessRunner(); runner.cancel()
         XCTAssertThrowsError(try PDFWatermarkEngine.data(document: document, pages: [0, 1, 2], options: options,
                                                         checkCancellation: { try runner.checkCancellation() }))
+    }
+
+    func testRasterExportKeepsPageRotationAndArtwork() throws {
+        let document = try PDFEngine.load(fixture())
+        let page = try XCTUnwrap(document.page(at: 0))
+        for angle in [0, 90, 180, 270] {
+            page.rotation = angle
+            let expected = try raster(page)
+            let result = try PDFEngine.render(page, dpi: 72)
+            XCTAssertEqual(result.width, expected.width); XCTAssertEqual(result.height, expected.height)
+            let first = Array(try XCTUnwrap(expected.dataProvider?.data) as Data)
+            let second = Array(try XCTUnwrap(result.dataProvider?.data) as Data)
+            let difference = zip(first, second).reduce(0.0) { $0 + abs(Double($1.0) - Double($1.1)) } / Double(first.count)
+            XCTAssertLessThan(difference, 1, "rotated artwork must remain in place")
+        }
+        XCTAssertThrowsError(try PDFEngine.render(page, dpi: .nan))
+        XCTAssertThrowsError(try PDFEngine.render(page, dpi: .infinity))
+        XCTAssertThrowsError(try PDFEngine.render(page, dpi: 1e12))
     }
 
     func testPDFCompressionReportsRealSizeAndKeepsSelectableText() throws {
