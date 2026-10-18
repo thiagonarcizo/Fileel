@@ -72,6 +72,13 @@ enum DocumentEngine {
             }
             return output
         }
+        if ["rtfd", "textclipping"].contains(sourceFormat) {
+            let temporary = folder.appendingPathComponent("native-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            try runner.checkCancellation()
+            let normalized = try NativeDocumentInput.normalize(input, workspace: temporary, runner: runner)
+            return try convert(normalized, format: format, folder: folder, options: options, runner: runner)
+        }
         if ["jpg", "png"].contains(format) {
             let pdf = try convert(input, format: "pdf", folder: folder, options: options, runner: runner)
             let pages = folder.appendingPathComponent("\(stem) Pages")
@@ -82,13 +89,6 @@ enum DocumentEngine {
             let docx = sourceFormat == "docx" ? input : try convert(input, format: "docx", folder: folder, options: options, runner: runner)
             try pages(docx, output: output)
             return output
-        }
-        if sourceFormat == "textclipping" {
-            guard let pasteboard = NSPasteboard(name: .init(input.path)) as NSPasteboard?,
-                  let text = pasteboard.string(forType: .string) else { throw FileelError.message("Cannot read this Finder text clipping.") }
-            let txt = folder.appendingPathComponent("clipping.txt")
-            try text.write(to: txt, atomically: true, encoding: .utf8)
-            return try convert(txt, format: format, folder: folder, options: options, runner: runner)
         }
         if ["pages", "rtf", "rtfd"].contains(sourceFormat), ["md", "epub", "txt", "html"].contains(format) {
             let docx = folder.appendingPathComponent("rich-text-source.docx")
