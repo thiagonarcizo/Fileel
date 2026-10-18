@@ -4,6 +4,11 @@ on:
   push:
     branches: [main, dev]
   workflow_dispatch:
+    inputs:
+      publish_update:
+        description: Publish a public release and advance its update feed
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -34,6 +39,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Check first-release acceptance gate
+        if: github.event_name == 'push' || inputs.publish_update
         env:
           RELEASE_READY: ${{ vars.FILEEL_RELEASE_READY }}
         run: |
@@ -69,7 +75,14 @@ jobs:
           FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
         run: python3 Scripts/release.py build
       - name: Publish verified downloads and update feed
+        if: github.event_name == 'push' || inputs.publish_update
         env:
           GH_TOKEN: ${{ github.token }}
           FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
+          FILEEL_RELEASE_READY: ${{ vars.FILEEL_RELEASE_READY }}
         run: python3 Scripts/release.py publish
+      - name: Verify a private draft upload and remove it
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish_update
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 Scripts/release.py rehearse

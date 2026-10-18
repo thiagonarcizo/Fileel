@@ -4,6 +4,7 @@ import copy
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 
@@ -17,6 +18,34 @@ spec.loader.exec_module(release)
 class ReleaseTests(unittest.TestCase):
     def plan(self, branch="main", run=1, attempt=1):
         return release.release_plan(branch, run, attempt, "a" * 40, "0.0.1")
+
+    def test_publication_refuses_to_run_before_acceptance(self):
+        with patch.dict(release.os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "acceptance is still locked"):
+                release.publish_release()
+
+    def test_rehearsal_tags_cannot_target_normal_release_tags(self):
+        self.assertEqual(release.rehearsal_tag("1234", "2"), "verification-1234-2")
+        for run, attempt in [("v1.0", "1"), ("1234", "--force"), ("0", "1"), ("1234\n", "1")]:
+            with self.assertRaises(ValueError):
+                release.rehearsal_tag(run, attempt)
+
+    def test_rehearsal_never_deletes_an_existing_draft_when_creation_fails(self):
+        plan = self.plan("dev")
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            (directory / "plan.json").write_text(release.json.dumps(plan))
+            public = directory / "public"; public.mkdir()
+            for name in (plan["filename"], plan["filename"] + ".sha256", "release.json", "Fileel-Runtime-Sources.tar", "Fileel-Runtime-Sources.tar.sha256"):
+                (public / name).write_bytes(b"fixture")
+            environment = {"GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REPOSITORY": release.REPOSITORY,
+                           "GITHUB_SHA": plan["sha"], "GITHUB_RUN_ID": "1234", "GITHUB_RUN_ATTEMPT": "1"}
+            with patch.dict(release.os.environ, environment), patch.object(release, "workspace", return_value=directory), \
+                    patch.object(release, "run", side_effect=RuntimeError("draft already exists")) as run:
+                with self.assertRaises(RuntimeError):
+                    release.rehearse_release()
+                self.assertEqual(run.call_count, 1)
+                self.assertEqual(run.call_args.args[0][:3], ["gh", "release", "create"])
 
     def test_untrusted_branches_and_invalid_versions_cannot_publish(self):
         for branch in ["feature/example", "updates", "refs/pull/1/merge", "main\nmalicious"]:

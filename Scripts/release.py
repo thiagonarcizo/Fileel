@@ -270,7 +270,48 @@ def gh_json(args):
     return json.loads(capture(["gh", *args]))
 
 
+def rehearsal_tag(run_id, attempt):
+    if not re.fullmatch(r"[1-9]\d*", run_id) or not re.fullmatch(r"[1-9]\d*", attempt):
+        raise ValueError("a rehearsal requires a valid workflow run and attempt")
+    return f"verification-{run_id}-{attempt}"
+
+
+def rehearse_release():
+    directory = workspace()
+    plan = json.loads((directory / "plan.json").read_text())
+    if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch" or os.environ.get("GITHUB_REPOSITORY") != REPOSITORY:
+        raise ValueError("private distribution verification requires an upstream manual run")
+    if plan["sha"] != os.environ.get("GITHUB_SHA") or plan["branch"] not in ("main", "dev"):
+        raise ValueError("the verification source does not match the reviewed branch")
+    tag = rehearsal_tag(os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"])
+    public = directory / "public"
+    names = [plan["filename"], plan["filename"] + ".sha256", "release.json",
+             "Fileel-Runtime-Sources.tar", "Fileel-Runtime-Sources.tar.sha256"]
+    assets = [public / name for name in names]
+    if not all(asset.is_file() for asset in assets):
+        raise ValueError("a verification artifact is missing")
+    # drafts stay private to repository maintainers and never touch either signed update feed
+    run(["gh", "release", "create", tag, *assets, "--repo", REPOSITORY, "--target", plan["sha"],
+         "--title", "Private Fileel distribution verification", "--notes",
+         "Temporary signed-build verification. This draft is removed after upload checks.", "--draft", "--prerelease"])
+    try:
+        downloaded = directory / "verification-download"
+        downloaded.mkdir()
+        run(["gh", "release", "download", tag, "--repo", REPOSITORY, "--dir", downloaded])
+        for name in names:
+            with (public / name).open("rb") as source, (downloaded / name).open("rb") as remote:
+                if hashlib.file_digest(source, "sha256").digest() != hashlib.file_digest(remote, "sha256").digest():
+                    raise ValueError("a downloaded verification artifact differs from the original")
+        verify_signature(downloaded / plan["filename"], plan["signature"])
+        print("private signed/notarized upload and download verification passed; update feeds are unchanged")
+    finally:
+        # this run created the unique draft, so cleanup cannot remove an existing public release
+        run(["gh", "release", "delete", tag, "--repo", REPOSITORY, "--cleanup-tag", "--yes"])
+
+
 def publish_release():
+    if os.environ.get("FILEEL_RELEASE_READY") != "true":
+        raise ValueError("public release acceptance is still locked; use a private verification run")
     directory = workspace()
     plan = json.loads((directory / "plan.json").read_text())
     if os.environ.get("GITHUB_REPOSITORY") != REPOSITORY or plan["sha"] != os.environ.get("GITHUB_SHA"):
@@ -340,14 +381,14 @@ def publish_release():
 if __name__ == "__main__":
     try:
         os.umask(0o077)
-        commands = {"plan": plan_release, "build": build_release, "publish": publish_release}
+        commands = {"plan": plan_release, "build": build_release, "publish": publish_release, "rehearse": rehearse_release}
         if len(sys.argv) == 3 and sys.argv[1] == "verify-bundle":
             with (Path(sys.argv[2]) / "Contents/Info.plist").open("rb") as stream:
                 verify_app_info(plistlib.load(stream))
             print("the built app contains the expected update configuration")
             sys.exit(0)
         if len(sys.argv) != 2 or sys.argv[1] not in commands:
-            raise ValueError("usage: release.py plan|build|publish")
+            raise ValueError("usage: release.py plan|build|publish|rehearse")
         commands[sys.argv[1]]()
     except (ValueError, RuntimeError, KeyError, OSError) as error:
         print(f"::error::{error}", file=sys.stderr)
