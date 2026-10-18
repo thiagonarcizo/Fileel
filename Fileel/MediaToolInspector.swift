@@ -12,6 +12,9 @@ struct MediaToolInspector: View {
     private var cuts: [Double] { options.splitPoints.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }.sorted() }
 
     var body: some View {
+        if tool == .cropVideo {
+            CropInspector(size: videoSize, options: $options, alignment: 2)
+        } else {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if [.trimAudio, .trimVideo, .bleep, .redactVideo].contains(tool) {
@@ -69,7 +72,7 @@ struct MediaToolInspector: View {
                 if tool == .speed {
                     section("Playback Speed", symbol: "speedometer") {
                         Text("\(options.speed, specifier: "%.2f")×").font(.system(size: 30, weight: .medium).monospacedDigit())
-                        Slider(value: $options.speed, in: 0.25...4).accessibilityLabel("Playback speed")
+                        ResettableSlider(title: "Playback speed", value: $options.speed, range: 0.25...4, defaultValue: 1)
                         HStack {
                             ForEach([0.5, 1.0, 2.0], id: \.self) { rate in Button("\(rate, specifier: "%.1f")×") { options.speed = rate }.controlSize(.small) }
                         }
@@ -81,6 +84,7 @@ struct MediaToolInspector: View {
                         .frame(minHeight: 380)
                 }
             }.padding(22)
+        }
         }
     }
 

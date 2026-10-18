@@ -168,7 +168,7 @@ struct ContentView: View {
                 }
             }
             Section("File Tools") {
-                ForEach(FileTool.allCases) { tool in Label(tool.title, systemImage: tool.symbol) }
+                ForEach(FileTool.available) { tool in Label(tool.title, systemImage: tool.symbol) }
             }
             Section("Local Engines") {
                 ForEach(["ffmpeg", "ffprobe", "pandoc", "soffice"], id: \.self) { engine in
@@ -256,9 +256,12 @@ struct OperationOptionsView: View {
         }
         if tool == .editImage {
             Section("Adjustments") {
-                Slider(value: $options.exposure, in: -3...3) { Text("Exposure") }
-                Slider(value: $options.saturation, in: 0...2) { Text("Saturation") }
-                Slider(value: $options.contrast, in: 0.5...1.5) { Text("Contrast") }
+                Text("Exposure")
+                ResettableSlider(title: "Exposure", value: $options.exposure, range: -3...3, defaultValue: 0)
+                Text("Saturation")
+                ResettableSlider(title: "Saturation", value: $options.saturation, range: 0...2, defaultValue: 1)
+                Text("Contrast")
+                ResettableSlider(title: "Contrast", value: $options.contrast, range: 0.5...1.5, defaultValue: 1)
             }
         }
         if tool == .annotateImage {
@@ -287,7 +290,8 @@ struct OperationOptionsView: View {
                     }
                 }
                 Stepper("Spacing: \(options.padding) px", value: $options.padding, in: 0...300)
-                Slider(value: $options.cornerRadius, in: 0...300) { Text("Corner Radius: \(Int(options.cornerRadius)) px") }
+                Text("Corner Radius: \(Int(options.cornerRadius)) px")
+                ResettableSlider(title: "Corner Radius", value: $options.cornerRadius, range: 0...300, defaultValue: 0)
                 if tool == .collage { Stepper("Columns: \(options.columns)", value: $options.columns, in: 1...12) }
             }
         }
@@ -298,7 +302,10 @@ struct OperationOptionsView: View {
                 Text("Review the saved result before sharing. Detection can miss sensitive content.").font(.caption).foregroundStyle(.secondary)
             }
         }
-        if tool == .speed { Slider(value: $options.speed, in: 0.25...4) { Text("Speed: \(options.speed, specifier: "%.2f")×") } }
+        if tool == .speed {
+            Text("Speed: \(options.speed, specifier: "%.2f")×")
+            ResettableSlider(title: "Speed", value: $options.speed, range: 0.25...4, defaultValue: 1)
+        }
         if tool == .rotate {
             Picker("Rotation", selection: $options.rotation) {
                 ForEach([0, 90, 180, 270], id: \.self) { Text("\($0)°").tag($0) }
@@ -314,7 +321,10 @@ struct OperationOptionsView: View {
             TextField("Fade In (Seconds)", value: $options.fadeIn, format: .number)
             TextField("Fade Out (Seconds)", value: $options.fadeOut, format: .number)
         }
-        if tool == .removeSilence { Slider(value: $options.silenceThreshold, in: -60 ... -15) { Text("Silence Threshold: \(Int(options.silenceThreshold)) dB") } }
+        if tool == .removeSilence {
+            Text("Silence Threshold: \(Int(options.silenceThreshold)) dB")
+            ResettableSlider(title: "Silence Threshold", value: $options.silenceThreshold, range: -60 ... -15, defaultValue: -40)
+        }
         if tool == .shiftSubtitles { TextField("Offset (Seconds)", value: $options.offset, format: .number) }
         if tool == .speedSubtitles { TextField("Speed Multiplier", value: $options.speed, format: .number) }
         if tool == .embedSubtitles {

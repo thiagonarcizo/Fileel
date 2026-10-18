@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import Vision
 import XCTest
 @testable import FileelCore
 
@@ -202,6 +203,11 @@ final class ImageEditingTests: XCTestCase {
         guard case .clipboard(let text) = result else { return XCTFail("OCR must return clipboard text") }
         XCTAssertTrue(text.contains("FILEEL OCR TEST"), text)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(), before)
+        let cpu = VNRecognizeTextRequest()
+        cpu.recognitionLevel = .accurate
+        cpu.automaticallyDetectsLanguage = true
+        try VisionExecution.perform([cpu], handler: VNImageRequestHandler(cgImage: ImageEngine.load(textImage)), preferCPU: true)
+        XCTAssertTrue((cpu.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").contains("FILEEL OCR TEST"))
     }
 
     func testLargeImagePreviewKeepsOriginalDimensionsAndDecodesOnlyOnce() async throws {
@@ -223,6 +229,24 @@ final class ImageEditingTests: XCTestCase {
         let loads = await renderer.sourceLoads
         XCTAssertEqual(loads, 1)
         print("20 cached 1600 px adjustments from a 12 MP source: \(start.duration(to: clock.now))")
+    }
+
+    func testClipboardImageContainsEditedPixelsWithoutAFileOrLocationMetadata() throws {
+        var tagged = OperationOptions(); tagged.latitude = "-22"; tagged.longitude = "-47"
+        let original = folder.appendingPathComponent("tagged.jpg")
+        try ImageEngine.write(image, to: original, options: tagged)
+        var options = OperationOptions()
+        options.annotations = [.init(kind: .cover, startX: 0.1, startY: 0.1, endX: 0.5, endY: 0.5, hex: "FF0000")]
+        let before = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+        let data = try ImageEngine.clipboardPNG([original], tool: .annotateImage, options: options)
+        let encoded = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let result = try XCTUnwrap(CGImageSourceCreateImageAtIndex(encoded, 0, nil))
+        XCTAssertEqual(result.width, 400)
+        XCTAssertEqual(result.height, 200)
+        XCTAssertGreaterThan(try color(result, x: 100, y: 40).redComponent, 0.95)
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(encoded, 0, nil) as? [CFString: Any])
+        XCTAssertNil(properties[kCGImagePropertyGPSDictionary])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(), before)
     }
 
 }

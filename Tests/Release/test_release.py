@@ -1,5 +1,6 @@
 import base64
 import importlib.util
+import copy
 from pathlib import Path
 import tempfile
 import unittest
@@ -85,6 +86,31 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(stable.findall("channel/item")), 10)
         self.assertEqual(stable.findtext(f"channel/item/{{{release.SPARKLE}}}version"), "112.1")
         self.assertEqual(ET.tostring(beta), original_beta)
+
+    def test_built_bundle_must_include_real_typed_update_policies(self):
+        plan = self.plan()
+        info = {
+            "FileelUpdateBranch": "main", "SUPublicEDKey": release.PUBLIC_KEY,
+            "SUFeedURL": "https://raw.githubusercontent.com/thiagonarcizo/Fileel/updates/stable/appcast.xml",
+            "CFBundleIdentifier": "xyz.narcizo.Fileel", "CFBundleVersion": plan["build"],
+            "CFBundleShortVersionString": plan["marketing"], "SUScheduledCheckInterval": 3600,
+            "LSUIElement": True, "SUEnableAutomaticChecks": True, "SUEnableInstallerLauncherService": True,
+            "SURequireSignedFeed": True, "SUVerifyUpdateBeforeExtraction": True,
+        }
+        release.verify_app_info(info, plan)
+        for key in info:
+            broken = copy.deepcopy(info); del broken[key]
+            with self.assertRaises(ValueError, msg=key):
+                release.verify_app_info(broken, plan)
+        broken = copy.deepcopy(info); broken["SURequireSignedFeed"] = "YES"
+        with self.assertRaises(ValueError):
+            release.verify_app_info(broken, plan)
+        beta = self.plan("dev")
+        with self.assertRaises(ValueError):
+            release.verify_app_info(info, beta)
+        info["FileelUpdateBranch"] = "dev"
+        info["SUFeedURL"] = info["SUFeedURL"].replace("/stable/", "/beta/")
+        release.verify_app_info(info, beta)
 
 
 if __name__ == "__main__":

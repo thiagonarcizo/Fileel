@@ -8,9 +8,9 @@ This is a development checklist. The app is not described as feature-complete so
 
 | Family | Conversion outputs | Tools |
 | --- | --- | --- |
-| Images | JPG, PNG, WebP, HEIC, TIFF, AVIF, PDF | Compression, metadata, adjustments, text annotation, background, crop, solid redaction, image-to-PDF, collage, resize, rotate/flip, remove background, OCR |
+| Images | JPG, PNG, WebP, HEIC, TIFF, AVIF, PDF | Target-size compression, metadata, adjustments, automatic enhancement, annotation, background, crop, solid or randomized-mosaic redaction, image-to-PDF, collage, resize, rotate/flip, remove background, clipboard OCR |
 | Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF | Compression, metadata, normalization, trim, mono/stereo, waveform video, bleep, fades, remove silence, join |
-| Video | MP4, MOV, MKV, WebM, GIF, MP3 | Compression, metadata, trim, split, crop, speed, mute, snapshots, join, solid redaction, resize, rotate/flip, extract audio, add/extract subtitles |
+| Video | MP4, MOV, MKV, WebM, GIF, MP3 | Target-size compression, metadata, trim, crop, speed, mute, snapshots, join, solid redaction, resize, rotate/flip, extract audio, add/extract subtitles |
 | PDF | DOCX, PAGES, PPTX, XLSX, JPG, PNG, EPUB, TXT, MD | Compression, metadata, merge, split, reorder/duplicate/remove/rotate pages, password protection, watermark, searchable OCR |
 | Documents / EPUB | DOCX, PAGES, PDF, HTML, EPUB, TXT, MD, JPG, PNG | Word count, text comparison, clear formatting |
 | Slides | PDF, JPG, PNG | Legacy PPT input |
@@ -26,18 +26,21 @@ Input aliases and format families are declared in `Fileel/Catalog.swift`. An exa
 
 - The global Finder drag and modifier workflow needs end-to-end interactive validation, especially modifier interactions, cancellation, multiple displays, full-screen apps, and sources other than Finder
 - Trackpad haptics are requested through the native API; physical feedback has not been validated by a person on a supported trackpad
-- The image editing canvas now implements drag cropping, arrows, rectangles, ellipses, text, numbered callouts, and undo/redo. Exported pixels and coordinate mapping are tested; pointer interactions and the new layout still need interactive QA
+- The image editing canvas implements a persistent crop frame with move/resize handles, aspect presets, ratio locking, orientation changes, arrows, rectangles, ellipses, text, numbered callouts, and undo/redo. Exported pixels and crop geometry are tested; complete pointer interaction QA remains outstanding
 - Background editing now implements solid colors, gradients, an image backdrop, spacing, and rounded source corners. Exported pixels are tested; live preview layout still needs interactive QA
 - Metadata editing now supports author/artist, title, camera make/model, image lens, signed latitude/longitude, removal of location, and removal of existing tags. Image tags are tested; media edits preserve encoded audio/video stream hashes through remuxing
-- Native media previews now implement playback, scrubbing, frame stepping, a waveform decoded from the actual audio, and draggable range handles. Native-unplayable formats still need a proxy-preview path; video crop remains coordinate-based and multiple split/bleep ranges need direct editing
-- Image redaction now implements manual solid and blurred regions, plus local face/text detection. Blur is tested not to restore original pixels beneath an earlier solid cover. Tracked video regions, multiple bleep ranges, and exhaustive detection review remain outstanding
+- Native media previews implement playback, scrubbing, frame stepping, a waveform decoded from the actual audio, draggable range handles, a shared image/video crop frame and a Space playback shortcut. Native-unplayable formats still need a proxy-preview path; multiple bleep ranges need direct editing
+- Image redaction implements manual color fill and randomized mosaic regions, plus local face/text detection. Randomized mosaic is tested to be independent of covered source pixels. Tracked video regions, multiple bleep ranges, and exhaustive detection review remain outstanding
 - PDF-to-DOCX/PAGES/EPUB exports extracted text with local OCR fallback; original layout, embedded graphics, and table structure are not reconstructed
 - PDF-to-PPTX uses rendered pages as slide images; editable elements and preservation of varied page aspect ratios remain outstanding
 - PDF-to-XLSX exports text lines as rows, not recovered table cells. Selected-sheet CSV exports cached values, not recalculated formulas or formatting
 - Pages output uses installed Apple Pages; its Apple events flow has not been validated interactively. RTFD and Finder text clipping compatibility need fixtures
 - Video joining normalizes to 1280×720/30 fps; clips without audio and complex track layouts still need acceptance coverage
-- Image compression currently uses encoder quality; exact target-byte or percentage reduction controls remain outstanding
-- Engine bundling, exact codec inventory, dependency source/license packaging, release signing, notarization, and an update mechanism remain outstanding
+- Compression accepts a requested percentage for images, PDFs and video. Image/PDF previews measure actual local test encodes; video shows a bitrate-based estimate. Exact byte targets are not guaranteed, and an unreachable target is reported honestly. A lossless image that cannot shrink is kept unchanged rather than enlarged
+- PDF organization now uses per-page thumbnail identities, reorder, duplicate, delete and individual rotation. Backend tests verify page order, selectable text, independent duplicate rotation and preservation of originals; drag-and-drop UI acceptance remains outstanding
+- Watermark preview and export use the same vector PDF renderer. Tests verify all four page rotations, artwork placement, selectable source/watermark text, chosen metadata and cancellation
+- A Developer ID archive has passed Apple notarization and Gatekeeper assessment. Stable/beta update integration, signed feeds and protected release automation exist, but installed-app updates and the final release pipeline are not yet accepted end to end
+- Engine bundling, exact codec inventory, dependency source/license packaging and clean-Mac acceptance remain outstanding. A clean CI runner exposed missing codecs in the minimal FFmpeg formula and a Vision execution failure; the full codec formula and CPU fallback are being validated
 
 ## Acceptance evidence
 
@@ -45,6 +48,6 @@ Automated tests cover generated image conversions, output collision protection, 
 
 Additional tests cover image canvas mapping, annotation output pixels, gradients and rounded backgrounds, camera/GPS metadata preservation and location removal, encoded-stream preservation during media metadata edits, timeline boundaries, waveform decoding, and modifier keys held before a drag
 
-The latest native UI review was blocked because the Mac was locked. The image and media editor changes must not be described as visually accepted until the Mac is unlocked and the actual windows are reviewed
+Native UI review verified the onboarding, Test Haptic label, Keep Quality enabled by default, conditional quality slider, and double-click slider reset. Switching the preview's modifier changes modes without hovering a slice. A wheel screenshot exposed truncated captions; compact labels and font measurements now cover every catalog group, and the updated rendering still needs review. Dedicated photo, video and PDF windows are not yet fully accepted
 
 Further acceptance requires real-world fixtures for every supported input extension, visual comparisons for fidelity, accessibility review, light/dark/increased-contrast review, physical trackpad feedback, and a self-contained signed release install on a clean Mac

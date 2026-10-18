@@ -15,6 +15,7 @@ final class WheelPresentation: ObservableObject {
 
 struct WheelAppearance: View {
     @ObservedObject var state: WheelPresentation
+    @Namespace private var glassNamespace
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -28,7 +29,7 @@ struct WheelAppearance: View {
         .scaleEffect(reduceMotion || state.expanded ? 1 : 0.12, anchor: .center)
         .opacity(state.expanded ? 1 : 0)
         .animation(.timingCurve(0.22, 1, 0.36, 1, duration: reduceMotion ? 0.08 : 0.16), value: state.expanded)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: state.highlighted)
+        .animation(reduceMotion ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: 0.24), value: state.mode)
         .accessibilityHidden(true)
     }
 
@@ -36,10 +37,11 @@ struct WheelAppearance: View {
         ZStack {
             ForEach(WheelGeometry(count: state.operations.count).items, id: \.index) { item in
                 WheelSlice(item: item, operation: state.operations[item.index], selected: state.highlighted == item.index,
-                           reduceTransparency: reduceTransparency)
+                           reduceTransparency: reduceTransparency, namespace: glassNamespace)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.55, anchor: .center).combined(with: .opacity))
             }
             VStack(spacing: 5) {
-                Text(state.mode.rawValue).font(.system(size: 12, weight: .semibold))
+                Text(state.mode.rawValue).font(.system(size: 12, weight: .semibold)).id(state.mode).transition(.opacity)
                 Text(selectedTitle ?? state.filename).font(.system(size: 10)).multilineTextAlignment(.center).lineLimit(2)
                 if selectedTitle == nil {
                     Text(state.operations.isEmpty ? "No tools" : "Cancel").font(.system(size: 10)).foregroundStyle(.secondary)
@@ -47,7 +49,8 @@ struct WheelAppearance: View {
             }
             .opacity(state.showHubLabels ? 1 : 0)
             .padding(10).frame(width: WheelGeometry.hubRadius * 2, height: WheelGeometry.hubRadius * 2)
-            .modifier(WheelMaterial(shape: Circle(), selected: false, reduceTransparency: reduceTransparency))
+            .modifier(WheelMaterial(shape: Circle(), selected: false, reduceTransparency: reduceTransparency,
+                                    glassID: "hub", namespace: glassNamespace))
         }.frame(width: WheelGeometry.canvasSize, height: WheelGeometry.canvasSize)
     }
 
@@ -59,11 +62,21 @@ struct WheelAppearance: View {
 
 // each glass effect is bounded to its own slice and contains its own foreground content
 // full-canvas glass layers can occlude neighboring labels even when their paths are disjoint
-private struct WheelSlice: View {
-    let item: WheelGeometry.Item
+private struct WheelSlice: View, Animatable {
+    var item: WheelGeometry.Item
     let operation: FileOperation
     let selected: Bool
     let reduceTransparency: Bool
+    let namespace: Namespace.ID
+
+    // interpolate the actual polar shape so changing ring counts never snaps the slice outline
+    var animatableData: AnimatablePair<AnimatablePair<Double, Double>, AnimatablePair<Double, Double>> {
+        get { AnimatablePair(AnimatablePair(item.angle, item.sweep), AnimatablePair(item.inner, item.outer)) }
+        set {
+            item = WheelGeometry.Item(index: item.index, angle: newValue.first.first, sweep: newValue.first.second,
+                                      inner: newValue.second.first, outer: newValue.second.second)
+        }
+    }
     private var bounds: CGRect {
         WheelSector(item: item).path(in: CGRect(x: 0, y: 0, width: WheelGeometry.canvasSize, height: WheelGeometry.canvasSize)).boundingRect
     }
@@ -72,18 +85,21 @@ private struct WheelSlice: View {
         let shape = WheelSector(item: item, origin: bounds.origin)
         ZStack {
             Color.clear
-            VStack(spacing: 5) {
+            VStack(spacing: 4) {
                 Image(systemName: operation.symbol).font(.system(size: item.iconSize, weight: .medium))
                 Text(operation.wheelTitle).font(.system(size: item.labelSize, weight: .medium))
-                    .multilineTextAlignment(.center).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.82).allowsTightening(true)
             }
+            .id(operation)
+            .transition(.opacity)
             .foregroundStyle(selected ? Color.accentColor : .primary)
-            .frame(width: item.labelWidth, height: 56)
+            .frame(width: item.labelWidth, height: item.labelHeight)
             .position(x: WheelGeometry.canvasSize / 2 + item.radius * cos(item.angle * .pi / 180) - bounds.minX,
                       y: WheelGeometry.canvasSize / 2 - item.radius * sin(item.angle * .pi / 180) - bounds.minY)
         }
         .frame(width: bounds.width, height: bounds.height)
-        .modifier(WheelMaterial(shape: shape, selected: selected, reduceTransparency: reduceTransparency))
+        .modifier(WheelMaterial(shape: shape, selected: selected, reduceTransparency: reduceTransparency,
+                                glassID: "slice-\(item.index)", namespace: namespace))
         .overlay(shape.stroke(LinearGradient(colors: [.white.opacity(0.42), .white.opacity(0.06), .black.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 0.7))
         .position(x: bounds.midX, y: bounds.midY)
     }
@@ -94,9 +110,13 @@ private struct WheelMaterial<S: Shape>: ViewModifier {
     let shape: S
     let selected: Bool
     let reduceTransparency: Bool
+    let glassID: String
+    let namespace: Namespace.ID
     func body(content: Content) -> some View {
         if #available(macOS 26, *), !reduceTransparency {
             content.glassEffect(.regular.tint(selected ? .accentColor.opacity(0.26) : .clear).interactive(), in: shape)
+                .glassEffectID(glassID, in: namespace)
+                .glassEffectTransition(.matchedGeometry)
         } else {
             content.background(reduceTransparency ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor)) : AnyShapeStyle(.regularMaterial), in: shape)
                 .overlay(shape.strokeBorderFallback(selected ? Color.accentColor : Color(nsColor: .separatorColor)))

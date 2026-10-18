@@ -155,6 +155,27 @@ def verify_signature(path, signature):
     run(["swift", ROOT / "Scripts/VerifyUpdate.swift", path, PUBLIC_KEY, signature])
 
 
+def verify_app_info(info, plan=None):
+    branch = info.get("FileelUpdateBranch")
+    if branch not in ("main", "dev"):
+        raise ValueError("the archived app is missing its update channel")
+    channel = "stable" if branch == "main" else "beta"
+    expected = f"https://raw.githubusercontent.com/{REPOSITORY}/updates/{channel}/appcast.xml"
+    if info.get("SUPublicEDKey") != PUBLIC_KEY or info.get("SUFeedURL") != expected:
+        raise ValueError("the app has incorrect update trust or feed metadata")
+    for key in ("SUEnableAutomaticChecks", "SUEnableInstallerLauncherService", "SURequireSignedFeed", "SUVerifyUpdateBeforeExtraction"):
+        if info.get(key) is not True:
+            raise ValueError(f"the app is missing the boolean update policy {key}")
+    if info.get("LSUIElement") is not True or info.get("CFBundleIdentifier") != "xyz.narcizo.Fileel":
+        raise ValueError("the app has incorrect menu-bar or bundle identity metadata")
+    if info.get("SUScheduledCheckInterval") != 3600:
+        raise ValueError("the app is missing the scheduled update interval")
+    build_tuple(info.get("CFBundleVersion", ""))
+    if plan and (info.get("CFBundleVersion") != plan["build"] or branch != plan["branch"]
+                 or info.get("CFBundleShortVersionString") != plan["marketing"]):
+        raise ValueError("the archived app has an incorrect release version or channel")
+
+
 def sparkle_tool(directory):
     tools = list((directory / "DerivedData/SourcePackages/artifacts/sparkle").glob("*/bin/sign_update"))
     if len(tools) != 1:
@@ -202,10 +223,7 @@ def build_release():
             app = archive / "Products/Applications/Fileel.app"
             with (app / "Contents/Info.plist").open("rb") as stream:
                 info = plistlib.load(stream)
-            if (info.get("SUPublicEDKey") != PUBLIC_KEY or info.get("CFBundleIdentifier") != "xyz.narcizo.Fileel"
-                    or info.get("CFBundleVersion") != plan["build"] or info.get("FileelUpdateBranch") != plan["branch"]
-                    or info.get("SUFeedURL") != f"https://raw.githubusercontent.com/{REPOSITORY}/updates/{plan['channel']}/appcast.xml"):
-                raise ValueError("the archived app has incorrect update trust or channel metadata")
+            verify_app_info(info, plan)
             # a public download must contain the engines promised by the app, not rely on homebrew
             manifest = app / "Contents/Resources/engines/manifest.json"
             if not manifest.is_file():
@@ -309,6 +327,11 @@ if __name__ == "__main__":
     try:
         os.umask(0o077)
         commands = {"plan": plan_release, "build": build_release, "publish": publish_release}
+        if len(sys.argv) == 3 and sys.argv[1] == "verify-bundle":
+            with (Path(sys.argv[2]) / "Contents/Info.plist").open("rb") as stream:
+                verify_app_info(plistlib.load(stream))
+            print("the built app contains the expected update configuration")
+            sys.exit(0)
         if len(sys.argv) != 2 or sys.argv[1] not in commands:
             raise ValueError("usage: release.py plan|build|publish")
         commands[sys.argv[1]]()

@@ -64,7 +64,9 @@ final class AppModel: ObservableObject {
         var options = OperationOptions()
         let defaults = UserDefaults.standard
         options.keepQuality = defaults.object(forKey: "keepQuality") as? Bool ?? true
-        options.quality = options.keepQuality ? 1 : 0.82
+        // preserve the manual quality between toggles without applying it in keep-quality mode
+        let manualQuality = defaults.object(forKey: "quality") as? Double ?? 0.82
+        options.quality = options.keepQuality ? 1 : (manualQuality.isFinite ? min(1, max(0.1, manualQuality)) : 0.82)
         options.preserveMetadata = defaults.object(forKey: "preserveMetadata") as? Bool ?? true
         if let path = defaults.string(forKey: "outputDirectory"), !path.isEmpty { options.outputDirectory = URL(fileURLWithPath: path) }
         return options

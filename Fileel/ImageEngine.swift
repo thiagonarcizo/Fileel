@@ -46,7 +46,9 @@ enum ImageEngine {
               let destination = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil) else {
             throw FileelError.message("The native image encoder cannot write \(url.pathExtension.uppercased()).")
         }
-        var properties: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: options.quality]
+        // the native AVIF writer rejects 1 as an unsupported lossless mode, so use its highest working quality
+        let quality = url.pathExtension.lowercased() == "avif" && options.quality >= 1 ? 0.999 : options.quality
+        var properties: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: quality]
         if options.preserveMetadata, !options.stripMetadata, let source,
            let input = CGImageSourceCreateWithURL(source as CFURL, nil),
            let original = CGImageSourceCopyPropertiesAtIndex(input, 0, nil) as? [CFString: Any] {
@@ -87,12 +89,28 @@ enum ImageEngine {
             ]
         }
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { throw FileelError.message("The image encoder could not finish the file.") }
+        guard CGImageDestinationFinalize(destination) else { throw FileelError.message("The \(url.pathExtension.uppercased()) encoder could not finish the file.") }
     }
 
     static func supports(_ ext: String) -> Bool {
         guard let type = UTType(filenameExtension: ext) else { return false }
         return (CGImageDestinationCopyTypeIdentifiers() as! [String]).contains(type.identifier)
+    }
+
+    // clipboard images contain only flattened pixels, never the source file's metadata or hidden layers
+    static func clipboardPNG(_ inputs: [URL], tool: FileTool, options: OperationOptions) throws -> Data {
+        try Task.checkCancellation()
+        guard let first = inputs.first else { throw FileelError.message("Choose an image first.") }
+        let image = try tool == .collage ? collage(inputs, options: options) : edit(first, tool: tool, options: options)
+        try Task.checkCancellation()
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+            throw FileelError.message("The image could not be prepared for copying.")
+        }
+        CGImageDestinationAddImage(destination, image, [kCGImagePropertyOrientation: 1] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw FileelError.message("The image could not be copied.") }
+        try Task.checkCancellation()
+        return data as Data
     }
 
     static func resized(_ image: CGImage, options: OperationOptions) throws -> CGImage {
@@ -110,6 +128,16 @@ enum ImageEngine {
 
     static func edit(_ original: CGImage, tool: FileTool, options: OperationOptions) throws -> CGImage {
         var image = original
+        if tool == .rotate {
+            let swapped = options.rotation == 90 || options.rotation == 270
+            let ctx = try context(width: swapped ? original.height : original.width, height: swapped ? original.width : original.height)
+            ctx.translateBy(x: CGFloat(ctx.width) / 2, y: CGFloat(ctx.height) / 2)
+            ctx.rotate(by: -CGFloat(options.rotation) * .pi / 180)
+            if options.flipHorizontal { ctx.scaleBy(x: -1, y: 1) }
+            ctx.draw(original, in: CGRect(x: -CGFloat(original.width) / 2, y: -CGFloat(original.height) / 2,
+                                         width: CGFloat(original.width), height: CGFloat(original.height)))
+            return ctx.makeImage()!
+        }
         if tool == .cropImage {
             let rect = try pixelRect(image, options: options)
             guard let cropped = image.cropping(to: rect) else { throw FileelError.message("The crop is outside the image.") }
@@ -145,7 +173,7 @@ enum ImageEngine {
             let text = VNRecognizeTextRequest()
             if options.detectFaces { requests.append(faces) }
             if options.detectText { requests.append(text) }
-            if !requests.isEmpty { try VNImageRequestHandler(cgImage: image).perform(requests) }
+            if !requests.isEmpty { try VisionExecution.perform(requests, handler: VNImageRequestHandler(cgImage: image)) }
             let boxes = (faces.results ?? []).map(\.boundingBox) + (text.results ?? []).map(\.boundingBox)
             for box in boxes {
                 let rect = CGRect(x: box.minX * CGFloat(image.width), y: box.minY * CGFloat(image.height),

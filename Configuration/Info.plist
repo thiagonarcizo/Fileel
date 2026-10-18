@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- keep custom update keys explicit because generated build-setting keys can be dropped -->
+    <key>FileelUpdateBranch</key>
+    <string>$(FILEEL_UPDATE_BRANCH)</string>
+    <key>SUFeedURL</key>
+    <string>https://raw.githubusercontent.com/thiagonarcizo/Fileel/updates/$(FILEEL_UPDATE_CHANNEL)/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>nMA9rtIbe4Be4GX9EsRMc9w6iHfiNVcVa0JXb++TIAc=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <false/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>3600</integer>
+    <key>SUEnableInstallerLauncherService</key>
+    <true/>
+    <key>SURequireSignedFeed</key>
+    <true/>
+    <key>SUVerifyUpdateBeforeExtraction</key>
+    <true/>
+</dict>
+</plist>

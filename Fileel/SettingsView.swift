@@ -34,12 +34,14 @@ final class SettingsWindowController: NSWindowController {
 }
 
 struct SettingsView: View {
+    @ObservedObject private var updater = UpdaterManager.shared
     @AppStorage("settingsPane") private var pane = "General"
     @AppStorage("dragEnabled") private var dragEnabled = true
     @AppStorage("hapticsEnabled") private var haptics = true
     @AppStorage("soundsEnabled") private var sounds = false
     @AppStorage("preserveMetadata") private var preserveMetadata = true
     @AppStorage("keepQuality") private var keepQuality = true
+    @AppStorage("quality") private var quality = 0.82
     @AppStorage("revealResults") private var reveal = false
     @AppStorage("outputDirectory") private var outputDirectory = ""
     @State private var login = SMAppService.mainApp.status == .enabled
@@ -66,7 +68,7 @@ struct SettingsView: View {
                         Text("Feedback plays when the highlighted option changes. Haptics require a compatible trackpad.")
                             .font(.caption).foregroundStyle(.secondary)
                         HStack {
-                            Button("Test Feedback") { SelectionFeedback.play() }
+                            Button("Test Haptic") { SelectionFeedback.play() }
                             Button("Preview Menu…") { WheelPreviewController.shared.show() }
                         }
                     }
@@ -80,7 +82,18 @@ struct SettingsView: View {
                     }
                 } else if pane == "Conversion" {
                     Section("Defaults") {
-                        Toggle("Keep Quality", isOn: $keepQuality).toggleStyle(.button)
+                        Toggle("Keep Quality", isOn: $keepQuality).toggleStyle(.switch)
+                        if !keepQuality {
+                            // keep the manual setting tucked away until the user opts into compression
+                            VStack(spacing: 8) {
+                                LabeledContent("Quality") {
+                                    Text(quality, format: .percent.precision(.fractionLength(0)))
+                                        .monospacedDigit().foregroundStyle(.secondary)
+                                }
+                                ResettableSlider(title: "Quality", value: $quality, range: 0.1...1, defaultValue: 0.82, step: 0.01)
+                                    .accessibilityValue(quality.formatted(.percent.precision(.fractionLength(0))))
+                            }
+                        }
                         Toggle("Preserve metadata", isOn: $preserveMetadata)
                         Toggle("Reveal results in Finder", isOn: $reveal)
                     }
@@ -99,7 +112,7 @@ struct SettingsView: View {
                     }
                 } else if pane == "Engines" {
                     Section("Installed Locally") {
-                        ForEach(["ffmpeg", "ffprobe", "pandoc", "soffice", "7zz"], id: \.self) { engine in
+                        ForEach(["ffmpeg", "ffprobe", "pandoc", "soffice", "7zz", "gs"], id: \.self) { engine in
                             VStack(alignment: .leading, spacing: 4) {
                                 Label(engine, systemImage: Engines.locate(engine) == nil ? "exclamationmark.circle" : "checkmark.circle")
                                 Text(Engines.locate(engine)?.path ?? "Not installed").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
@@ -109,12 +122,26 @@ struct SettingsView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } else {
-                    Section("Fileel") {
+                    Section(updater.installedChannel == .beta ? "Fileel Beta" : "Fileel") {
                         Text("Local file conversion and tools for Mac.")
-                        LabeledContent("Version", value: "0.0.1 — Development")
+                        LabeledContent("Version", value: "\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
+                        LabeledContent("Installed Channel", value: updater.installedChannel.title)
                         LabeledContent("Architecture", value: "Apple Silicon")
-                        Text("Independent implementation. Fileel is not affiliated with Tangerine. Third-party engines retain their own licenses.")
-                            .foregroundStyle(.secondary)
+                    }
+                    Section("Updates") {
+                        Toggle("Automatically check for updates", isOn: $updater.automaticChecks)
+                        Picker("Update Channel", selection: $updater.channel) {
+                            ForEach(UpdateChannel.allCases) { channel in Text(channel.title).tag(channel) }
+                        }.disabled(!updater.canCheckForUpdates)
+                        Button("Check for Updates…") { updater.checkForUpdates() }.disabled(!updater.canCheckForUpdates)
+                        if updater.channel == .beta {
+                            Text("Beta versions include features still being tested.").font(.caption).foregroundStyle(.secondary)
+                        } else if updater.installedChannel == .beta {
+                            Text("Beta updates are off. Your current version stays installed until a newer stable version is available.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        if !updater.enabledInThisBuild {
+                            Text("Update installation is disabled in development builds.").font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }

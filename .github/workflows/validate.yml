@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# superseded pull requests should not keep consuming mac runners or publish stale check results
+concurrency:
+  group: fileel-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   native:
     name: Native build and engine tests
@@ -20,8 +25,10 @@ jobs:
           persist-credentials: false
       - name: Install test engines
         run: |
-          brew install ffmpeg pandoc sevenzip ghostscript
+          brew install ffmpeg-full pandoc sevenzip ghostscript
           brew install --cask libreoffice
+          echo "FILEEL_FFMPEG=$(brew --prefix ffmpeg-full)/bin/ffmpeg" >> "$GITHUB_ENV"
+          echo "FILEEL_FFPROBE=$(brew --prefix ffmpeg-full)/bin/ffprobe" >> "$GITHUB_ENV"
       - name: Verify release tooling
         run: python3 -m unittest discover -s Tests/Release -v
       - name: Test native engines
@@ -31,6 +38,8 @@ jobs:
           xcodebuild build -project Fileel.xcodeproj -scheme Fileel \
             -configuration Release -destination 'platform=macOS,arch=arm64' \
             -derivedDataPath "$RUNNER_TEMP/FileelValidation" CODE_SIGNING_ALLOWED=NO
+      - name: Verify the built update configuration
+        run: python3 Scripts/release.py verify-bundle "$RUNNER_TEMP/FileelValidation/Build/Products/Release/Fileel.app"
 
   secrets:
     name: Secret scan

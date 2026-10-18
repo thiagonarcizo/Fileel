@@ -117,7 +117,13 @@ struct MediaPreviewView: View {
                     if isVideo {
                         if editsRectangle {
                             MediaPlayerSurface(player: media.player)
-                                .overlay { VideoRectangleOverlay(size: media.videoSize, options: $options, redaction: operation == .tool(.redactVideo), pause: { media.player.pause() }) }
+                                .overlay {
+                                    if operation == .tool(.cropVideo) {
+                                        CropOverlay(size: media.videoSize, options: $options, inset: 0, alignment: 2, pause: { media.player.pause() })
+                                    } else {
+                                        VideoRectangleOverlay(size: media.videoSize, options: $options, redaction: true, pause: { media.player.pause() })
+                                    }
+                                }
                         } else { VideoPlayer(player: media.player) }
                     }
                     else {
@@ -138,7 +144,7 @@ struct MediaPreviewView: View {
                     HStack(spacing: 12) {
                         Button { media.toggle(start: editsRange ? options.start : 0, end: editsRange ? options.end : media.duration, rate: speed) } label: {
                             Label(media.playing ? "Pause" : "Play", systemImage: media.playing ? "pause.fill" : "play.fill")
-                        }.controlSize(.small)
+                        }.controlSize(.small).keyboardShortcut(.space, modifiers: []).help("Play / Pause (Space)")
                         if isVideo {
                             Button { media.player.pause(); media.player.currentItem?.step(byCount: -1) } label: { Image(systemName: "backward.frame") }.help("Previous frame")
                             Button { media.player.pause(); media.player.currentItem?.step(byCount: 1) } label: { Image(systemName: "forward.frame") }.help("Next frame")
@@ -168,7 +174,12 @@ struct MediaPreviewView: View {
             onPosition(current)
             if operation == .tool(.snapshots) { options.start = current }
         }
-        .onChange(of: media.videoSize) { _, size in onVideoSize(size) }
+        .onChange(of: media.videoSize) { _, size in
+            onVideoSize(size)
+            if operation == .tool(.cropVideo), options.width <= 0, size.width > 0 {
+                CropGeometry.apply(CGRect(origin: .zero, size: size), to: &options, alignment: 2)
+            }
+        }
         .onDisappear { media.stop() }
     }
 }

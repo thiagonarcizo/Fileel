@@ -36,7 +36,7 @@ enum PDFEngine {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.automaticallyDetectsLanguage = true
-            try VNImageRequestHandler(cgImage: render(page)).perform([request])
+            try VisionExecution.perform([request], handler: VNImageRequestHandler(cgImage: render(page)))
             return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
         }.joined(separator: "\n\n")
     }
@@ -83,14 +83,24 @@ enum PDFEngine {
                 try save(single, to: output.appendingPathComponent("Page \(index + 1).pdf"))
             }
         } else if tool == .organizePDF {
-            let values = options.pageOrder.split(separator: ",").map { Int($0.trimmingCharacters(in: .whitespaces)) }
-            guard !values.isEmpty, values.allSatisfy({ $0 != nil && (1...document.pageCount).contains($0!) }) else {
-                throw FileelError.message("Enter page numbers from 1 to \(document.pageCount), separated by commas. Repeat to duplicate, omit to remove.")
+            let pages: [PDFPageEdit]
+            if !options.pdfPages.isEmpty { pages = options.pdfPages }
+            else {
+                let values = options.pageOrder.split(separator: ",").map { Int($0.trimmingCharacters(in: .whitespaces)) }
+                guard !values.isEmpty, values.allSatisfy({ $0 != nil && (1...document.pageCount).contains($0!) }) else {
+                    throw FileelError.message("Choose valid pages to keep in the PDF.")
+                }
+                pages = values.map { PDFPageEdit(sourceIndex: $0! - 1, rotation: options.rotation) }
+            }
+            guard pages.allSatisfy({ (0..<document.pageCount).contains($0.sourceIndex) && $0.rotation % 90 == 0 }) else {
+                throw FileelError.message("A selected page or rotation is invalid.")
             }
             let result = PDFDocument()
-            for value in values {
-                let page = document.page(at: value! - 1)!.copy() as! PDFPage
-                page.rotation = (page.rotation + options.rotation) % 360
+            if options.preserveMetadata { result.documentAttributes = document.documentAttributes }
+            for edit in pages {
+                try runner.checkCancellation()
+                let page = document.page(at: edit.sourceIndex)!.copy() as! PDFPage
+                page.rotation = ((page.rotation + edit.rotation) % 360 + 360) % 360
                 result.insert(page, at: result.pageCount)
             }
             try save(result, to: output)
@@ -101,9 +111,7 @@ enum PDFEngine {
             document.documentAttributes = attributes
             try save(document, to: output)
         } else if tool == .compress {
-            // PDFKit's compression keeps selectable text and vectors intact
-            let properties: [PDFDocumentWriteOption: Any] = [.saveTextFromOCROption: true, .optimizeImagesForScreenOption: true]
-            guard document.write(to: output, withOptions: properties) else { throw FileelError.message("Cannot compress the PDF.") }
+            try PDFCompressionEngine.compress(input, output: output, reduction: options.compressionReduction, runner: runner)
         }
     }
 }

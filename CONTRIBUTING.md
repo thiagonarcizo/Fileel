@@ -2,7 +2,7 @@
 
 Open an issue to discuss a feature or submit a focused pull request. Include screenshots for interface changes and describe the behavior you verified
 
-Use Xcode 27 on Apple Silicon. For local engine tests, install `ffmpeg`, `pandoc`, `sevenzip`, `ghostscript` and LibreOffice, then run `swift test`. Build the app with the shared Fileel scheme
+Use Xcode 27 on Apple Silicon. For local engine tests, install `ffmpeg-full`, `pandoc`, `sevenzip`, `ghostscript` and LibreOffice, then run `swift test`. FFmpeg must include the codecs used by the app, including WebP, Vorbis and VP9. Set `FILEEL_FFMPEG` and `FILEEL_FFPROBE` to the full formula's binaries when it is keg-only. Build the app with the shared Fileel scheme
 
 Write code comments in English, in lower case except acronyms, without a final period. Keep comments short and explain the reason for a decision
 
