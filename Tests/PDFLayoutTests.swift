@@ -88,6 +88,18 @@ final class PDFLayoutTests: XCTestCase {
         try assertRoundTrip(output, name: "slides-roundtrip")
     }
 
+    func testEditableImportsDetectMissingLettersBeforeReturningAResult() throws {
+        let output = try DocumentEngine.convert(source, format: "docx", folder: directory, options: .init(), runner: ProcessRunner())
+        XCTAssertTrue(try OfficeTextFidelity.retainsText(of: source, in: output, runner: ProcessRunner()))
+        let package = try unpack(output, name: "damaged-package")
+        let xml = package.appendingPathComponent("word/document.xml")
+        let damaged = try String(contentsOf: xml, encoding: .utf8).replacingOccurrences(of: "Fileel", with: "Fleel")
+        try damaged.write(to: xml, atomically: true, encoding: .utf8)
+        let corrupt = directory.appendingPathComponent("missing-glyph.docx")
+        try OfficePackage.pack(package, output: corrupt, runner: ProcessRunner())
+        XCTAssertFalse(try OfficeTextFidelity.retainsText(of: source, in: corrupt, runner: ProcessRunner()))
+    }
+
     func testRasterSlideFallbackFitsMixedPageOrientationsWithoutStretching() throws {
         let pdf = try PDFEngine.load(source)
         pdf.page(at: 1)?.rotation = 90

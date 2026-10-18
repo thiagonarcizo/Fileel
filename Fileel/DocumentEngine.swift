@@ -17,6 +17,9 @@ enum DocumentEngine {
             if format == "pptx" {
                 do {
                     try office(input, format: format, output: output, runner: runner, inputFilter: "impress_pdf_import")
+                    guard try OfficeTextFidelity.retainsText(of: input, in: output, runner: runner) else {
+                        throw FileelError.message("The editable slide import changed PDF characters.")
+                    }
                 } catch is CancellationError { throw CancellationError() }
                 catch {
                     // keep the page-image fallback for PDFs the editable import filter cannot open
@@ -35,6 +38,9 @@ enum DocumentEngine {
                     var imported = false
                     do {
                         try office(input, format: "docx", output: editable, runner: runner, inputFilter: "writer_pdf_import")
+                        guard try OfficeTextFidelity.retainsText(of: input, in: editable, runner: runner) else {
+                            throw FileelError.message("The editable document import changed PDF characters.")
+                        }
                         imported = true
                     } catch is CancellationError { throw CancellationError() }
                     catch {
