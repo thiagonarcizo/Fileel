@@ -46,9 +46,14 @@ enum PDFEngine {
         guard let reference = page.pageRef else { throw FileelError.message("A PDF page cannot be rendered.") }
         let requested = ((page.rotation % 360) + 360) % 360
         let intrinsic = ((Int(reference.rotationAngle) % 360) + 360) % 360
+        let displayed = try displayedBounds(page)
+        let scale = min(bounds.width / displayed.width, bounds.height / displayed.height)
         context.saveGState()
         defer { context.restoreGState() }
-        context.concatenate(reference.getDrawingTransform(.mediaBox, rect: bounds, rotate: Int32(requested - intrinsic), preserveAspectRatio: true))
+        // quartz fits pages down but does not enlarge them, so apply requested raster scaling explicitly
+        context.translateBy(x: bounds.midX - displayed.width * scale / 2, y: bounds.midY - displayed.height * scale / 2)
+        context.scaleBy(x: scale, y: scale)
+        context.concatenate(reference.getDrawingTransform(.mediaBox, rect: displayed, rotate: Int32(requested - intrinsic), preserveAspectRatio: true))
         context.drawPDFPage(reference)
         for annotation in page.annotations where annotation.shouldPrint { annotation.draw(with: .mediaBox, in: context) }
     }
