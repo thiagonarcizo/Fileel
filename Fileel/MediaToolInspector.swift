@@ -12,7 +12,9 @@ struct MediaToolInspector: View {
     private var cuts: [Double] { options.splitPoints.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }.sorted() }
 
     var body: some View {
-        if tool == .cropVideo {
+        if tool == .bleep {
+            AudioRedactionInspector(options: $options, playhead: playhead, duration: duration)
+        } else if tool == .cropVideo {
             CropInspector(size: videoSize, options: $options, alignment: 2)
         } else {
         ScrollView {

@@ -25,6 +25,12 @@ enum OperationRequirements {
         if [.trimAudio, .trimVideo, .bleep, .redactVideo].contains(tool), !options.start.isFinite || !options.end.isFinite || options.start < 0 || options.end <= options.start {
             return "The end time must be after the start time."
         }
+        if tool == .bleep, options.usesBleepRanges || !options.bleepRanges.isEmpty {
+            guard !options.bleepRanges.isEmpty, options.bleepRanges.count <= BleepEngine.maximumRanges,
+                  options.bleepRanges.allSatisfy({ $0.start.isFinite && $0.end.isFinite && $0.start >= 0 && $0.end > $0.start }) else {
+                return "Add valid bleep ranges before saving."
+            }
+        }
         if tool == .splitVideo, options.splitPoints.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "Add a cut at the playhead to split the video." }
         if tool == .annotateImage, options.annotations.isEmpty { return "Choose a drawing tool and add a mark on the preview." }
         if tool == .redactImage, !options.detectFaces && !options.detectText && options.annotations.isEmpty && (options.width <= 0 || options.height <= 0) {
