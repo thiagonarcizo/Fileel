@@ -8,9 +8,9 @@ This is a development checklist. The app is not described as feature-complete so
 
 | Family | Conversion outputs | Tools |
 | --- | --- | --- |
-| Images | JPG, PNG, WebP, HEIC, TIFF, AVIF, PDF | Target-size compression, metadata, adjustments, automatic enhancement, annotation, background, crop, solid or randomized-mosaic redaction, image-to-PDF, collage, resize, rotate/flip, remove background, clipboard OCR |
-| Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF | Compression, metadata, normalization, trim, mono/stereo, waveform video, bleep, fades, remove silence, join |
-| Video | MP4, MOV, MKV, WebM, GIF, MP3 | Target-size compression, metadata, trim, crop, speed, mute, snapshots, join, solid redaction, resize, rotate/flip, extract audio, add/extract subtitles |
+| Images | JPG, PNG, WebP, HEIC, TIFF, AVIF, BMP, PDF | Target-size compression, metadata, adjustments, automatic enhancement, annotation, background, crop, solid or randomized-mosaic redaction, image-to-PDF, collage, resize, rotate/flip, remove background, clipboard OCR |
+| Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA | Compression, metadata, normalization, trim, mono/stereo, waveform video, bleep, fades, remove silence, join |
+| Video | MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3 | Target-size compression, metadata, trim, crop, speed, mute, snapshots, join, solid redaction, resize, rotate/flip, extract audio, add/extract subtitles |
 | PDF | DOCX, PAGES, PPTX, XLSX, JPG, PNG, EPUB, TXT, MD | Compression, metadata, merge, split, reorder/duplicate/remove/rotate pages, password protection, watermark, searchable OCR |
 | Documents / EPUB | DOCX, PAGES, PDF, HTML, EPUB, TXT, MD, JPG, PNG | Word count, text comparison, clear formatting |
 | Slides | PDF, JPG, PNG | Legacy PPT input |
@@ -20,7 +20,7 @@ This is a development checklist. The app is not described as feature-complete so
 
 The core file actions are implemented: AirDrop, floating files, copy, move, copy path, and Terminal. Additional actions: Quick Look, reveal in Finder, batch rename, duplicate, and SHA-256
 
-Input aliases and format families are declared in `Fileel/Catalog.swift`. An exact count of 249 equivalent conversion paths has not been audited. Input format variants, legacy formats, encryption, embedded fonts, and unusual codecs need dedicated fixtures before making that claim
+Input aliases and format families are declared in `Fileel/Catalog.swift`. GIF inputs do not offer MP3 conversion because they contain no audio. Real-engine fixtures cover all 26 newly added BMP, WMA, AVI and WMV routes, including decoded dimensions, color, codecs, duration and unchanged originals. SVG rasterization uses explicit pixel dimensions independent of display scale. Input format variants, legacy formats, encryption, embedded fonts, and unusual codecs need dedicated fixtures before advertising a total conversion count
 
 ## Fidelity limits that still need work before v0
 
@@ -31,7 +31,7 @@ Input aliases and format families are declared in `Fileel/Catalog.swift`. An exa
 - Metadata editing now supports author/artist, title, camera make/model, image lens, signed latitude/longitude, removal of location, and removal of existing tags. Image tags are tested; media edits preserve encoded audio/video stream hashes through remuxing
 - Native media previews implement playback, scrubbing, frame stepping, a waveform decoded from the actual audio, draggable range handles, a shared image/video crop frame and a Space playback shortcut. Unsupported playback formats use an isolated local proxy, with a fast remux attempted first; smaller video proxies retain original pixel coordinates for cropping. Tests decode actual proxy frames/audio and verify cleanup, cancellation and unchanged originals
 - Audio bleeping supports multiple editable ranges, visible waveform marks, per-sample replacement and short tone ramps. Decoded-sample tests verify exact boundaries, both stereo channels, overlapping selections, unchanged samples outside lossless edits, float PCM, 24-bit ALAC/FLAC and invalid/removed selections. Its dedicated range inspector still needs pointer acceptance
-- Image redaction implements manual color fill and randomized mosaic regions, plus local face/text detection. Randomized mosaic is tested to be independent of covered source pixels. Tracked video regions and exhaustive detection review remain outstanding
+- Image redaction implements manual color fill and randomized mosaic regions, plus local face/text detection. Randomized mosaic is tested to be independent of covered source pixels. Video redaction covers a fixed area for the selected time range. Broader detection fixtures and pointer acceptance remain outstanding
 - PDF-to-DOCX and PAGES now use the office engine's positioned-text/graphics importer when each page contains selectable text and its letters survive import. Missing or substituted letters trigger the extracted-text fallback; scanned PDFs retain local OCR. Complex tables, mixed scans and unusual fonts still need broader fixtures; PDF-to-EPUB remains a reflowed text conversion
 - PDF-to-PPTX imports editable text and vector shapes. The page-image fallback preserves aspect ratios and centers mixed page orientations rather than stretching them. Generated round-trip fixtures verify page count, portrait geometry, editable text and artwork position
 - PDF-to-XLSX recovers rows and columns from text positions and repeated gutters, with one sheet per page. Scans use local OCR plus targeted cell recognition for isolated digits. Tests verify native/scanned tables, numeric values, leading-zero identifiers, genuinely empty cells, inert formula-like text and Office interoperability. Complex merged tables and broader real-world layouts still need acceptance coverage. Selected-sheet CSV exports cached values, not recalculated formulas or formatting

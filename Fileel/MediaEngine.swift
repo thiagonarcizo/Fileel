@@ -19,17 +19,22 @@ enum MediaEngine {
         case "flac": args += ["-vn", "-c:a", "flac"]
         case "ogg": args += ["-vn", "-c:a", "libvorbis", "-q:a", "5"]
         case "opus": args += ["-vn", "-c:a", "libopus", "-b:a", bitrate(options)]
+        case "wma": args += ["-vn", "-c:a", "wmav2", "-b:a", bitrate(options)]
         case "mp4", "mov", "mkv":
             args += ["-c:v", "h264_videotoolbox", "-b:v", "\(Int(1_000_000 + options.quality * 7_000_000))", "-pix_fmt", "yuv420p", "-c:a", "aac"]
             if ext != "mkv" { args += ["-movflags", "+faststart"] }
         case "webm": args += ["-c:v", "libvpx-vp9", "-crf", "\(Int(45 - options.quality * 20))", "-b:v", "0", "-c:a", "libopus"]
+        // use container-compatible legacy codecs already included in the bundled runtime
+        case "avi", "wmv":
+            args += ["-c:v", ext == "avi" ? "mpeg4" : "wmv2", "-q:v", "\(Int(31 - min(1, max(0, options.quality)) * 29))",
+                     "-pix_fmt", "yuv420p", "-c:a", ext == "avi" ? "libmp3lame" : "wmav2", "-b:a", bitrate(options)]
         case "webp": args += ["-frames:v", "1", "-c:v", "libwebp", "-quality", "\(Int(options.quality * 100))"]
         case "avif": args += ["-frames:v", "1", "-c:v", "libaom-av1", "-still-picture", "1", "-crf", "\(Int(50 - options.quality * 35))"]
         case "heic": args += ["-frames:v", "1", "-c:v", "hevc_videotoolbox"]
         case "gif":
             // a split filter generates the palette from the actual clip
             args += ["-an"]
-        case "png", "jpg", "tiff": args += ["-frames:v", "1"]
+        case "png", "jpg", "tiff", "bmp": args += ["-frames:v", "1"]
         default: throw FileelError.message("No media encoder for \(ext.uppercased()).")
         }
         if family == .image && ext != "gif" { args += ["-frames:v", "1"] }

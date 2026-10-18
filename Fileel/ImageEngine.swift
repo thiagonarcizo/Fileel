@@ -22,12 +22,26 @@ enum ImageEngine {
                 kCGImageSourceThumbnailMaxPixelSize: limit
             ] as CFDictionary) { return image }
         }
-        // appkit can rasterize SVG inputs that imageio cannot decode
-        guard let image = NSImage(contentsOf: url),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        // give vector inputs an explicit pixel canvas so a Retina display cannot double export dimensions
+        guard let image = NSImage(contentsOf: url), image.size.width.isFinite, image.size.height.isFinite,
+              image.size.width > 0, image.size.height > 0 else {
             throw FileelError.message("Cannot read \(url.lastPathComponent) as an image.")
         }
-        return cgImage
+        let longestSide = max(image.size.width, image.size.height)
+        let scale = maximumPixelSize.map { min(1, CGFloat(max(1, $0)) / longestSide) } ?? 1
+        let width = (image.size.width * scale).rounded()
+        let height = (image.size.height * scale).rounded()
+        guard width <= 16384, height <= 16384 else {
+            throw FileelError.message("Vector images can be rasterized up to 16384 pixels per side.")
+        }
+        let canvas = try context(width: max(1, Int(width)), height: max(1, Int(height)))
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: canvas, flipped: false)
+        image.draw(in: CGRect(x: 0, y: 0, width: canvas.width, height: canvas.height),
+                   from: .zero, operation: .copy, fraction: 1)
+        guard let raster = canvas.makeImage() else { throw FileelError.message("Cannot rasterize \(url.lastPathComponent).") }
+        return raster
     }
 
     static func context(width: Int, height: Int) throws -> CGContext {

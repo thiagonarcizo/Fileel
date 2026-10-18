@@ -21,9 +21,9 @@ enum FileFamily: String, CaseIterable, Sendable {
 
     var outputs: [String] {
         switch self {
-        case .image: return ["jpg", "png", "webp", "heic", "tiff", "avif", "pdf"]
-        case .audio: return ["mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff"]
-        case .video: return ["mp4", "mov", "mkv", "webm", "gif", "mp3"]
+        case .image: return ["jpg", "png", "webp", "heic", "tiff", "avif", "bmp", "pdf"]
+        case .audio: return ["mp3", "m4a", "wav", "flac", "ogg", "opus", "aiff", "wma"]
+        case .video: return ["mp4", "mov", "mkv", "webm", "avi", "wmv", "gif", "mp3"]
         case .pdf: return ["docx", "pages", "pptx", "xlsx", "jpg", "png", "epub", "txt", "md"]
         case .document: return ["docx", "pages", "pdf", "html", "epub", "txt", "md", "jpg", "png"]
         case .presentation: return ["pdf", "jpg", "png"]
@@ -371,7 +371,11 @@ enum Catalog {
         let family = FileFamily.detect(urls[0])
         if mode == .convert {
             return family.outputs.filter { output in
-                urls.allSatisfy { FileFamily.detect($0).outputs.contains(output) && canonical($0.pathExtension) != output }
+                urls.allSatisfy {
+                    let source = canonical($0.pathExtension)
+                    // animated images have no audio stream to extract
+                    return FileFamily.detect($0).outputs.contains(output) && source != output && !(source == "gif" && output == "mp3")
+                }
             }.map(FileOperation.convert)
         }
         return family.tools.filter { tool in
