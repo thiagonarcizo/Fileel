@@ -1,8 +1,12 @@
-<?xml version='1.0' encoding='utf-8'?>
-<rss version="2.0">
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
+IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
+--><rss version="2.0">
   <channel>
     <title>Fileel</title>
     <description>Verified Fileel updates for Apple Silicon</description>
     <language>en</language>
   </channel>
-</rss>
+</rss><!-- sparkle-signatures:
+edSignature: hXPDOem1s3vU97es4W9rUWQQhg0fkMWbSq9+hxCRyFCDaO0dKTZXheI6XA6mn1t4HOlc3wSs18xz96A1ouqICw==
+length: 469
+-->
