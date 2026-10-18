@@ -71,6 +71,11 @@ final class ConversionFormatParityTests: XCTestCase {
         XCTAssertFalse(Catalog.operations(for: [gif], mode: .convert).contains(.convert("mp3")))
         XCTAssertFalse(Catalog.operations(for: [gif, movie], mode: .convert).contains(.convert("mp3")))
         XCTAssertTrue(Catalog.operations(for: [movie], mode: .convert).contains(.convert("mp3")))
+        for tool in [FileTool.mute, .extractAudio, .extractSubtitles] {
+            XCTAssertFalse(Catalog.operations(for: [gif], mode: .tools).contains(.tool(tool)))
+            XCTAssertFalse(Catalog.operations(for: [gif, movie], mode: .tools).contains(.tool(tool)))
+            XCTAssertTrue(Catalog.operations(for: [movie], mode: .tools).contains(.tool(tool)))
+        }
         let source = folder.appendingPathComponent("source.mp4")
         try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i",
             "testsrc2=size=160x120:rate=10:duration=0.6", "-f", "lavfi", "-i", "sine=frequency=440:duration=0.6",

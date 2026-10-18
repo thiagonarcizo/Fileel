@@ -379,7 +379,12 @@ enum Catalog {
             }.map(FileOperation.convert)
         }
         return family.tools.filter { tool in
-            urls.allSatisfy { FileFamily.detect($0).tools.contains(tool) } && (!tool.grouped || urls.count > 1)
+            urls.allSatisfy {
+                // a GIF cannot contain an audio or subtitle stream to remove or extract
+                let animatedImage = canonical($0.pathExtension) == "gif"
+                return FileFamily.detect($0).tools.contains(tool) &&
+                    !(animatedImage && [.mute, .extractAudio, .extractSubtitles].contains(tool))
+            } && (!tool.grouped || urls.count > 1)
         }.map(FileOperation.tool)
     }
 
