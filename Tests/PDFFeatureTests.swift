@@ -92,12 +92,40 @@ final class PDFFeatureTests: XCTestCase {
 
     func testOrganizerMovesSelectionsAsAStableBlock() {
         let pages = (0..<5).map { PDFPageEdit(sourceIndex: $0) }
-        let moved = PDFPageLayout.moving(pages, ids: [pages[0].id, pages[2].id], over: pages[4].id)
+        let moved = PDFPageLayout.inserting(pages, ids: [pages[0].id, pages[2].id], before: 5)
         XCTAssertEqual(moved.map(\.sourceIndex), [1, 3, 4, 0, 2])
         XCTAssertEqual(Set(moved.map(\.id)), Set(pages.map(\.id)))
-        XCTAssertEqual(PDFPageLayout.moving(pages, ids: [pages[0].id], over: pages[0].id), pages)
+        XCTAssertEqual(PDFPageLayout.inserting(pages, ids: [pages[0].id], before: 0), pages)
         let duplicate = PDFPageEdit(sourceIndex: 0)
         XCTAssertNotEqual(duplicate.id, pages[0].id)
+    }
+
+    func testOrganizerInsertionGapsHandleBothDirectionsAndSelectedTargets() {
+        let pages = (0..<5).map { PDFPageEdit(sourceIndex: $0) }
+        XCTAssertEqual(PDFPageLayout.inserting(pages, ids: [pages[0].id], before: 5).map(\.sourceIndex), [1, 2, 3, 4, 0])
+        XCTAssertEqual(PDFPageLayout.inserting(pages, ids: [pages[4].id], before: 0).map(\.sourceIndex), [4, 0, 1, 2, 3])
+        XCTAssertEqual(PDFPageLayout.inserting(pages, ids: [pages[1].id, pages[3].id], before: 0).map(\.sourceIndex), [1, 3, 0, 2, 4])
+        XCTAssertEqual(PDFPageLayout.inserting(pages, ids: [pages[1].id, pages[2].id], before: 2), pages)
+        XCTAssertEqual(PDFPageLayout.inserting(pages, ids: [pages[1].id, pages[2].id], before: 3), pages)
+        XCTAssertEqual(PDFPageLayout.inserting(pages, ids: [pages[0].id], before: -1), pages)
+        XCTAssertEqual(PDFPageLayout.inserting(pages, ids: [pages[0].id], before: 6), pages)
+        XCTAssertEqual(PDFPageLayout.inserting(pages, ids: [UUID()], before: 0), pages)
+    }
+
+    func testOrganizerExportsTheOrderFromANativeDropGap() throws {
+        let source = try fixture()
+        let original = try digest(source)
+        let pages = (0..<3).map { PDFPageEdit(sourceIndex: $0) }
+        var options = OperationOptions()
+        options.pdfPages = PDFPageLayout.inserting(pages, ids: [pages[0].id], before: 3)
+        let output = folder.appendingPathComponent("drag-organized.pdf")
+        try PDFEngine.process(source, tool: .organizePDF, output: output, options: options, runner: ProcessRunner())
+        let document = try PDFEngine.load(output)
+        XCTAssertEqual(document.pageCount, 3)
+        for (index, number) in [2, 3, 1].enumerated() {
+            XCTAssertTrue(document.page(at: index)?.string?.contains("fileel page \(number)") == true)
+        }
+        XCTAssertEqual(try digest(source), original)
     }
 
     func testWatermarkPreservesTextAndDisplayedPageSizeForEveryRotation() throws {
