@@ -43,7 +43,7 @@ struct WheelAppearance: View {
                     .opacity(slot.operationIndex == nil ? 0 : 1)
             }
             VStack(spacing: 5) {
-                Text(state.mode.rawValue).font(.system(size: 12, weight: .semibold)).id(state.mode).transition(.opacity)
+                Text(state.mode.rawValue).font(.system(size: 12, weight: .semibold))
                 Text(selectedTitle ?? state.filename).font(.system(size: 10)).multilineTextAlignment(.center).lineLimit(2)
                 if selectedTitle == nil {
                     Text(state.operations.isEmpty ? "No tools" : "Cancel").font(.system(size: 10)).foregroundStyle(.secondary)
@@ -94,7 +94,8 @@ private struct WheelSlice: View, Animatable {
             if let operation { VStack(spacing: 4) {
                 Image(systemName: operation.symbol).font(.system(size: item.iconSize, weight: .medium))
                 Text(operation.wheelTitle).font(.system(size: item.labelSize, weight: .medium))
-                    .multilineTextAlignment(.center).lineLimit(2).minimumScaleFactor(0.82).allowsTightening(true)
+                    .multilineTextAlignment(.center).lineLimit(operation.wheelTitle.contains(where: \.isWhitespace) ? 2 : 1)
+                    .minimumScaleFactor(0.82).allowsTightening(true)
             }
             .foregroundStyle(selected ? Color.accentColor : .primary)
             // use the destination's text box throughout the morph so words never reflow mid-flight
