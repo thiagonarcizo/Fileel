@@ -78,7 +78,8 @@ jobs:
     name: CodeQL Swift
     # codeql's compiled-language tracing needs rosetta on arm hosts, so use an intel runner for analysis
     runs-on: macos-26-intel
-    timeout-minutes: 30
+    # allow headroom for the intel swift extractor and SDK module compilation
+    timeout-minutes: 45
     permissions:
       contents: read
       security-events: write
