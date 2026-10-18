@@ -83,6 +83,8 @@ final class ConversionFormatParityTests: XCTestCase {
                 XCTAssertGreaterThan(try MediaEngine.duration(output, runner: runner), 0.4, "\(ext) to \(target)")
                 let stream = try codec(output, stream: "v:0")
                 XCTAssertTrue(stream.contains(target == "avi" ? "mpeg4" : "wmv2"), stream)
+                let audio = try codec(output, stream: "a:0")
+                XCTAssertEqual(audio.contains("codec_name"), ext != "gif", "\(ext) to \(target)")
                 let frame = folder.appendingPathComponent("\(UUID().uuidString).png")
                 try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-i", output.path, "-frames:v", "1", frame.path])
                 let decoded = try ImageEngine.load(frame)
@@ -91,6 +93,37 @@ final class ConversionFormatParityTests: XCTestCase {
             }
             XCTAssertEqual(try Data(contentsOf: input), original)
         }
+    }
+
+    // legacy windows audio accepts at most stereo and 48 kHz, including when stored in a video container
+    func testWindowsAudioNegotiatesHighRateSurroundAndPreservesMono() throws {
+        let input = folder.appendingPathComponent("surround.wav")
+        try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i",
+            "sine=frequency=440:sample_rate=96000:duration=0.6", "-ac", "6", "-c:a", "pcm_s24le", input.path])
+        let original = try Data(contentsOf: input)
+        let movie = folder.appendingPathComponent("surround.mkv")
+        try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i",
+            "testsrc2=size=160x120:rate=10:duration=0.6", "-i", input.path,
+            "-c:v", "h264_videotoolbox", "-c:a", "copy", "-shortest", movie.path])
+        for (source, format) in [(input, "wma"), (movie, "wmv")] {
+            let output = try convert(source, to: format)
+            let info = try runner.run(Engines.require("ffprobe"), ["-v", "error", "-select_streams", "a:0",
+                "-show_entries", "stream=channels,sample_rate", "-of", "json", output.path])
+            let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(info.utf8)) as? [String: Any])
+            let streams = try XCTUnwrap(root["streams"] as? [[String: Any]])
+            let audio = try XCTUnwrap(streams.first)
+            XCTAssertEqual(audio["channels"] as? Int, 2)
+            XCTAssertEqual(audio["sample_rate"] as? String, "48000")
+            XCTAssertGreaterThan(try MediaEngine.duration(output, runner: runner), 0.5)
+        }
+        let mono = folder.appendingPathComponent("mono.wav")
+        try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i",
+            "sine=frequency=440:sample_rate=44100:duration=0.6", mono.path])
+        let output = try convert(mono, to: "wma")
+        let info = try runner.run(Engines.require("ffprobe"), ["-v", "error", "-select_streams", "a:0",
+            "-show_entries", "stream=channels,sample_rate", "-of", "csv=p=0", output.path])
+        XCTAssertEqual(info.trimmingCharacters(in: .whitespacesAndNewlines), "44100,1")
+        XCTAssertEqual(try Data(contentsOf: input), original)
     }
 
     private func convert(_ input: URL, to format: String) throws -> URL {

@@ -22,6 +22,8 @@ The core file actions are implemented: AirDrop, floating files, copy, move, copy
 
 Input aliases and format families are declared in `Fileel/Catalog.swift`. GIF inputs do not offer MP3 conversion because they contain no audio. Real-engine fixtures cover all 26 newly added BMP, WMA, AVI and WMV routes, including decoded dimensions, color, codecs, duration and unchanged originals. SVG rasterization uses explicit pixel dimensions independent of display scale. Input format variants, legacy formats, encryption, embedded fonts, and unusual codecs need dedicated fixtures before advertising a total conversion count
 
+WMA and WMV use WMA v2 audio, which supports mono/stereo up to 48 kHz. High-rate or surround inputs are resampled/downmixed for that encoder; existing mono/stereo 44.1/48 kHz layouts are retained
+
 ## Fidelity limits that still need work before v0
 
 - The global Finder drag and modifier workflow needs end-to-end interactive validation, especially modifier interactions, cancellation, multiple displays, full-screen apps, and sources other than Finder
@@ -44,7 +46,7 @@ Input aliases and format families are declared in `Fileel/Catalog.swift`. GIF in
 - Watermark preview and export use the same vector PDF renderer. Tests verify all four page rotations, artwork placement, selectable source/watermark text, chosen metadata and cancellation
 - Raster PDF export and OCR share that explicit page transform, preserving all four rotations across macOS versions; invalid or excessive raster resolutions fail before bitmap allocation
 - The complete runtime-bearing Developer ID app and its branded DMG have passed Apple notarization, ticket validation and update-signature verification. An isolated signed app has completed real Sparkle installation/relaunch, invalid-download rejection, preference retention and a stable/beta/stable round trip, including background checks. Two protected beta CI runs repeated signing, notarization, branded DMG creation, installed-update tests and temporary draft upload/download/cleanup ([first](https://github.com/thiagonarcizo/Fileel/actions/runs/39107534104), [second](https://github.com/thiagonarcizo/Fileel/actions/runs/39111478463)). This integrated candidate still needs that rehearsal; production-channel and visual updater acceptance remain outstanding
-- The runtime payload contains pinned ARM64 conversion tools, codec dependencies, upstream notices and a corresponding source archive. Its 223 native executables/libraries declare macOS 14 or earlier. All 82 integrated native tests passed with Homebrew, `/usr/local`, the system LibreOffice installation and build-only runtime dependencies denied to the test process. A separate clean-Mac installation and complete signed-app acceptance remain outstanding
+- The runtime payload contains pinned ARM64 conversion tools, codec dependencies, upstream notices and a corresponding source archive. Its 223 native executables/libraries declare macOS 14 or earlier. All 90 integrated native tests passed with Homebrew, `/usr/local`, the system LibreOffice installation and build-only runtime dependencies denied to the test process. A separate clean-Mac installation and complete signed-app acceptance remain outstanding
 - Collage previews include every selected source and share gradient/rounded-corner rendering with exports. Full image decoding no longer silently shrinks originals wider than 16384 pixels
 
 ## Acceptance evidence

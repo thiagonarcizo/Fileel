@@ -9,7 +9,12 @@ enum MediaEngine {
         let family = FileFamily.detect(input)
         var args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y"] + inputArguments + ["-i", input.path]
         if !filters.isEmpty { args += ["-vf", filters.joined(separator: ",")] }
-        if !audioFilters.isEmpty { args += ["-af", audioFilters.joined(separator: ",")] }
+        var outputAudioFilters = audioFilters
+        if ["wma", "wmv"].contains(ext) {
+            // wmav2 doesn't advertise its rate and channel limits to ffmpeg's automatic negotiation
+            outputAudioFilters.append("aformat=sample_rates=48000|44100:channel_layouts=mono|stereo")
+        }
+        if !outputAudioFilters.isEmpty { args += ["-af", outputAudioFilters.joined(separator: ",")] }
         args += try metadataArguments(options)
         switch ext {
         case "mp3": args += ["-vn", "-c:a", "libmp3lame", "-b:a", bitrate(options)]
