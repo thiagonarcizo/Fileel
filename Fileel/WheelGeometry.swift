@@ -5,17 +5,30 @@ struct WheelGeometry {
     static let canvasSize = 488.0
     static let hubRadius = 60.0
     static let angularInset = 1.4
+    enum Ring: String { case inner, outer }
     struct Item {
         let index: Int
         let angle: Double
         let sweep: Double
         let inner: Double
         let outer: Double
+        let ring: Ring
+        init(index: Int, angle: Double, sweep: Double, inner: Double, outer: Double, ring: Ring? = nil) {
+            self.index = index
+            self.angle = angle
+            self.sweep = sweep
+            self.inner = inner
+            self.outer = outer
+            self.ring = ring ?? (outer < 140 ? .inner : .outer)
+        }
+        // identify a place in a ring, not whichever operation currently occupies it
+        var slotID: String { "\(ring.rawValue)-\(Int(((90 - angle) / sweep).rounded()))" }
+        var cornerRadius: Double { min(5, max(0, (outer - inner) / 2)) }
         var radius: Double { (inner + outer) / 2 }
-        var labelHeight: Double { outer < 140 ? 44 : 48 }
+        var labelHeight: Double { ring == .inner ? 44 : 48 }
         var labelWidth: Double {
             // fit all four label corners inside the annular sector, including side-facing slices
-            let maximum = outer < 140 ? 74.0 : 106.0
+            let maximum = ring == .inner ? 74.0 : 106.0
             var low = 0.0, high = maximum
             for _ in 0..<14 {
                 let width = (low + high) / 2
@@ -32,10 +45,38 @@ struct WheelGeometry {
             }
             return max(24, low)
         }
-        var iconSize: Double { outer - inner > 90 ? 24 : outer < 140 ? 18 : 20 }
-        var labelSize: Double { outer < 140 ? 10 : 11 }
+        var iconSize: Double { ring == .inner ? 18 : 20 + 4 * min(1, max(0, (outer - inner - 78) / 28)) }
+        var labelSize: Double { ring == .inner ? 10 : 11 }
     }
     let items: [Item]
+
+    struct MorphSlot: Identifiable {
+        let id: String
+        let item: Item
+        let operationIndex: Int?
+    }
+
+    // keep both rings mounted so new slices grow into their own ring instead of scaling through the hub
+    static func morphSlots(count: Int, capacity: Int) -> [MorphSlot] {
+        let active = WheelGeometry(count: count).items
+        let largest = max(capacity, count)
+        let outerCapacity = max(8, largest > 8 ? Int(ceil(Double(largest) * 0.6)) : largest)
+        let innerCapacity = largest > 8 ? largest - Int(ceil(Double(largest) * 0.6)) : 0
+        let places = [(.outer, outerCapacity), (.inner, innerCapacity)].flatMap { (ring: Ring, size: Int) in
+            (0..<size).map { index in
+                Item(index: index, angle: 90 - Double(index) * 360 / Double(size), sweep: 360 / Double(size),
+                     inner: ring == .inner ? 70 : 146, outer: ring == .inner ? 138 : 224, ring: ring)
+            }
+        }
+        return places.map { place in
+            if let item = active.first(where: { $0.slotID == place.slotID }) {
+                return MorphSlot(id: place.slotID, item: item, operationIndex: item.index)
+            }
+            let radius = place.ring == .inner ? 70.0 : count > 8 ? 146.0 : 72.0
+            let collapsed = Item(index: place.index, angle: place.angle, sweep: place.sweep, inner: radius, outer: radius, ring: place.ring)
+            return MorphSlot(id: place.slotID, item: collapsed, operationIndex: nil)
+        }
+    }
 
     init(count: Int) {
         guard count > 0 else { items = []; return }

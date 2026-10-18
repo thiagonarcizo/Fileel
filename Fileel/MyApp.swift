@@ -11,7 +11,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
-        AppModel.shared.showWorkspace = { WorkspaceWindowController.shared.show() }
         dragController.start()
         updater.start()
         if !UserDefaults.standard.bool(forKey: "onboardingCompleted") { OnboardingWindowController.shared.show() }

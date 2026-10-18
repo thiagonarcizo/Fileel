@@ -40,17 +40,23 @@ private struct OnboardingView: View {
     @State private var mode: MenuMode = .convert
     @State private var appeared = false
     @State private var feedbackHovered: String?
+    @State private var readiness: [EngineReadiness] = []
+    @State private var checkedDependencies = false
+    @State private var pagesInstalled = false
     @AppStorage("hapticsEnabled") private var haptics = true
     @AppStorage("soundsEnabled") private var sounds = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var title: String {
-        ["A small gesture.\nA better file.", "Three shortcuts.\nOne fluid motion.", "A little detail.\nYour kind of Mac."][step]
+        ["A small gesture.\nA better file.", "Three shortcuts.\nOne fluid motion.", "A little detail.\nYour kind of Mac.", "Ready for\nyour next file."][step]
     }
     private var message: String {
         ["Convert, edit, and send files on their way.\nFileel lives quietly in your menu bar.",
          "Drag a file, hold a shortcut, and drop it\non the operation you need.",
-         "Feel each selection with your trackpad.\nKeep the sound as quiet as you like."][step]
+         "Feel each selection with your trackpad.\nKeep the sound as quiet as you like.",
+         !checkedDependencies ? "Checking the tools that power your files…" : readiness.allSatisfy(\.available) ?
+         "Your conversion tools are ready.\nThe complete app includes them for you." :
+         "Some conversion tools need attention.\nInstall the complete Fileel app to get them\nwithout setting up anything separately."][step]
     }
 
     var body: some View {
@@ -59,7 +65,7 @@ private struct OnboardingView: View {
                 FoldMark().frame(width: 19, height: 22)
                 Text("Fileel").font(.system(size: 16, weight: .semibold))
                 Spacer()
-                Text("\(step + 1) OF 3").font(.system(size: 10, weight: .medium)).tracking(1.4).foregroundStyle(.secondary)
+                Text("\(step + 1) OF 4").font(.system(size: 10, weight: .medium)).tracking(1.4).foregroundStyle(.secondary)
             }.padding(.top, 48)
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 23) {
@@ -69,14 +75,26 @@ private struct OnboardingView: View {
                     Text(message).font(.system(size: 14)).foregroundStyle(.secondary).lineSpacing(5).fixedSize(horizontal: false, vertical: true)
                     if step == 1 { shortcutButtons }
                     if step == 2 { feedbackControls }
+                    if step == 3 {
+                        if checkedDependencies && readiness.contains(where: { !$0.available }) {
+                            Link("Get the Complete App…", destination: URL(string: "https://github.com/thiagonarcizo/Fileel/releases")!)
+                                .buttonStyle(.borderedProminent).controlSize(.large)
+                        }
+                        Button("Check Again") { checkDependencies() }.disabled(!checkedDependencies)
+                        Text("Pages is optional. You only need it to create .pages files.")
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
                     if step == 0 {
                         Label("Local to your Mac", systemImage: "lock.shield")
                             .font(.system(size: 11)).foregroundStyle(.secondary).padding(.top, 4)
                     }
                 }.frame(width: 405, alignment: .leading)
                 Spacer(minLength: 0)
-                OnboardingArtwork(step: step, mode: mode, appeared: appeared)
-                    .frame(width: 350, height: 360).accessibilityHidden(true)
+                if step == 3 { dependencyChecklist.frame(width: 350, height: 360) }
+                else {
+                    OnboardingArtwork(step: step, mode: mode, appeared: appeared)
+                        .frame(width: 350, height: 360).accessibilityHidden(true)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .opacity(appeared ? 1 : 0).offset(y: appeared || reduceMotion ? 0 : 12)
@@ -86,19 +104,63 @@ private struct OnboardingView: View {
                 else { Button("Skip Introduction", action: finish).buttonStyle(.plain).foregroundStyle(.secondary) }
                 Spacer()
                 HStack(spacing: 6) {
-                    ForEach(0..<3) { index in
+                    ForEach(0..<4) { index in
                         Capsule().fill(index == step ? Color.accentColor : Color.primary.opacity(0.12)).frame(width: 6, height: 6)
                     }
-                }.accessibilityLabel("Step \(step + 1) of 3")
+                }.accessibilityLabel("Step \(step + 1) of 4")
                 Spacer()
-                Button(step == 2 ? "Start Using Fileel" : "Continue") {
-                    if step == 2 { finish() } else { move(1) }
+                Button(step == 3 ? (readiness.contains(where: { !$0.available }) ? "Continue with Available Tools" : "Start Using Fileel") : "Continue") {
+                    if step == 3 { finish() } else { move(1) }
                 }.buttonStyle(.borderedProminent).controlSize(.large).keyboardShortcut(.return, modifiers: [])
+                    .disabled(step == 3 && !checkedDependencies)
             }.padding(.vertical, 25)
         }
         .padding(.horizontal, 48)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.5)) { appeared = true } }
+        .task { checkDependencies() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in checkDependencies() }
+    }
+
+    private var dependencyChecklist: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Label("Conversion tools", systemImage: "shippingbox")
+                .font(.system(size: 17, weight: .semibold))
+            if !checkedDependencies { ProgressView("Checking this Mac…").controlSize(.small) }
+            ForEach(readiness) { tool in
+                HStack(spacing: 10) {
+                    Image(systemName: tool.available ? "checkmark.circle.fill" : "exclamationmark.circle")
+                        .foregroundStyle(tool.available ? Color.accentColor : .orange)
+                    Text(tool.title).font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Text(tool.status).font(.caption).foregroundStyle(.secondary)
+                }.accessibilityElement(children: .combine)
+            }
+            Divider()
+            HStack(spacing: 10) {
+                Image(systemName: "doc.richtext").font(.system(size: 24)).foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Apple Pages").font(.system(size: 12, weight: .medium))
+                    Text(pagesInstalled ? "Installed · optional" : "Optional · for .pages export")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if !pagesInstalled {
+                    Link("Get Pages…", destination: URL(string: "https://apps.apple.com/app/pages/id409201541")!)
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+        .padding(22)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(.separator.opacity(0.5), lineWidth: 1))
+    }
+
+    private func checkDependencies() {
+        // inspect executable availability only, without starting tools, installing packages or requesting permissions
+        readiness = Engines.readiness()
+        pagesInstalled = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iWork.Pages") != nil
+        checkedDependencies = true
     }
 
     private var shortcutButtons: some View {
@@ -150,7 +212,7 @@ private struct OnboardingView: View {
         }.frame(maxWidth: 300)
     }
     private func move(_ direction: Int) {
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { step = min(2, max(0, step + direction)) }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) { step = min(3, max(0, step + direction)) }
     }
 }
 

@@ -142,7 +142,11 @@ enum ImageDrawing {
     }
 
     static func background(_ image: CGImage, options: OperationOptions) throws -> CGImage {
-        let padding = max(0, options.padding)
+        // derive the same relative margin from preview pixels and full-resolution pixels
+        guard options.backgroundSpacingPercent.isFinite, (0...30).contains(options.backgroundSpacingPercent) else {
+            throw FileelError.message("Choose background spacing from 0% to 30%.")
+        }
+        let padding = Int((Double(min(image.width, image.height)) * options.backgroundSpacingPercent / 100).rounded())
         let width = image.width + padding * 2, height = image.height + padding * 2
         let ctx = try ImageEngine.context(width: width, height: height)
         let bounds = CGRect(x: 0, y: 0, width: width, height: height)

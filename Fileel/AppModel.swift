@@ -16,10 +16,8 @@ final class AppModel: ObservableObject {
     @Published var jobs: [Job] = []
     @Published var workspaceJobID: UUID?
     @Published var busy = false
-    @Published var error: String?
     private var runner: ProcessRunner?
     private var task: Task<Void, Never>?
-    var showWorkspace: (() -> Void)?
 
     // workspace feedback belongs to its current file selection, not the latest global job
     var workspaceJob: Job? { jobs.first { $0.id == workspaceJobID } }
@@ -80,8 +78,6 @@ final class AppModel: ObservableObject {
         options = defaults()
         if case .tool(let tool) = operation, tool.needsOptions {
             OperationWindowController.show(files: urls, operation: operation)
-        } else if operation == .action(.rename) {
-            showWorkspace?()
         } else {
             run(operation)
         }
@@ -91,7 +87,7 @@ final class AppModel: ObservableObject {
         let inputs = suppliedInputs ?? files
         let snapshot = suppliedOptions ?? options
         guard !busy, let operation = operation ?? selection, !inputs.isEmpty else { return }
-        if let issue = OperationRequirements.issue(for: operation, inputs: inputs, options: snapshot) { error = issue; return }
+        if let issue = OperationRequirements.issue(for: operation, inputs: inputs, options: snapshot) { presentError(issue); return }
         selection = operation
         if case .action(let action) = operation, ![.duplicate, .checksum].contains(action) { perform(action); return }
         let runner = ProcessRunner()
@@ -102,6 +98,7 @@ final class AppModel: ObservableObject {
         jobs.insert(Job(id: id, title: operation.title.replacingOccurrences(of: "…", with: ""),
                         detail: inputs.map(\.lastPathComponent).joined(separator: ", ")), at: 0)
         task = Task {
+            var failure: String?
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
                     try ConversionEngine.execute(operation, inputs: inputs, options: snapshot, runner: runner)
@@ -124,16 +121,28 @@ final class AppModel: ObservableObject {
                 updateJob(id, state: .cancelled, detail: "Cancelled")
             } catch {
                 updateJob(id, state: .failed, detail: error.localizedDescription)
-                self.error = error.localizedDescription
-                if suppliedInputs == nil { showWorkspace?() }
+                failure = error.localizedDescription
             }
             busy = false
             self.runner = nil
             task = nil
+            // a failed wheel action needs only its warning, never a workspace behind it
+            if let failure { presentError(failure) }
         }
     }
 
     func cancel() { runner?.cancel() }
+
+    // native alerts can appear on their own while the app stays a menu bar utility
+    private func presentError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "Operation Couldn’t Finish"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
 
     private func updateJob(_ id: UUID, state: Job.State, detail: String) {
         guard let index = jobs.firstIndex(where: { $0.id == id }) else { return }
@@ -161,10 +170,10 @@ final class AppModel: ObservableObject {
                     let target = OutputTransaction.uniqueURL(in: folder, name: file.lastPathComponent)
                     try FileManager.default.moveItem(at: file, to: target)
                 }
-            } catch { self.error = error.localizedDescription }
+            } catch { presentError(error.localizedDescription) }
         case .airDrop:
             guard let service = NSSharingService(named: .sendViaAirDrop), service.canPerform(withItems: files) else {
-                error = "AirDrop is unavailable for this selection."
+                presentError("AirDrop is unavailable for this selection.")
                 return
             }
             service.perform(withItems: files)
@@ -176,13 +185,12 @@ final class AppModel: ObservableObject {
                 (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true ? url : url.deletingLastPathComponent()
             }))
             NSWorkspace.shared.open(folders, withApplicationAt: terminal, configuration: .init()) { _, error in
-                if let error { Task { @MainActor in self.error = error.localizedDescription } }
+                if let error { Task { @MainActor in self.presentError(error.localizedDescription) } }
             }
         case .quickLook: QuickLookController.shared.show(files)
         case .reveal: NSWorkspace.shared.activateFileViewerSelecting(files)
         case .rename:
-            do { try FileActions.rename(files, template: options.renameTemplate); setFiles([]) }
-            catch { self.error = error.localizedDescription }
+            if let renamed = QuickOperationDialog.rename(files) { setFiles(renamed) }
         case .duplicate, .checksum: break
         }
     }

@@ -62,6 +62,7 @@ actor ImagePreviewRenderer {
             scaled.autoAdjust = false
             rendered = try ImageEngine.edit(options.autoAdjust ? automatic ?? original : original, tool: .editImage, options: scaled)
         case .tool(.background): rendered = try ImageEngine.edit(original, tool: .background, options: scaled)
+        case .tool(.rotate): rendered = try ImageEngine.edit(original, tool: .rotate, options: scaled)
         case .tool(.annotateImage): rendered = try ImageDrawing.annotated(original, marks: options.annotations)
         case .tool(.redactImage): rendered = try ImageEngine.edit(original, tool: .redactImage, options: scaled)
         default: rendered = original
