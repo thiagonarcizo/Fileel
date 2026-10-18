@@ -1,7 +1,9 @@
-https://github.com/user-attachments/assets/6b31c486-85f5-4b25-9001-1300ad8d5c84
-
 <p align="center">
   <img src="docs/brand/cover.svg" alt="Fileel — your files, one gesture away" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/media/fileel-demo.gif" alt="Fileel in action: drag a file and choose a tool from the radial menu" width="960">
 </p>
 
 <p align="center">
