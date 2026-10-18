@@ -8,6 +8,6 @@ A quiet fictional coastal landscape with turquoise Atlantic water, warm limeston
 
 ## Product video
 
-`fileel-demo.mp4` is the original 12.5-second product recording supplied by the app creator. The MP4 is stored in this repository; the README starts with its GitHub-hosted video player so it plays inline on GitHub.
+`fileel-demo.mp4` is the original 12.5-second product recording supplied by the app creator. `fileel-demo.gif` is its looping, 960-pixel-wide, 15-fps preview with an optimized 128-color palette. The README embeds the GIF directly below the introduction artwork.
 
-Player asset: https://github.com/user-attachments/assets/6b31c486-85f5-4b25-9001-1300ad8d5c84
+The original recording is retained here as the source for future previews.
