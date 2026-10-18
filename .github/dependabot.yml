@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # dependency updates go through the same review and checks as any other change
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

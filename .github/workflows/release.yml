@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# serialize both channels so neither can overwrite the other's published feed
+concurrency:
+  group: fileel-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
+    permissions:
+      contents: read
+      security-events: write
+
+  distribute:
+    name: Sign, notarize and publish
+    needs: validate
+    if: github.repository == 'thiagonarcizo/Fileel' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    runs-on: xcode-27
+    timeout-minutes: 90
+    environment: ${{ github.ref_name == 'main' && 'production' || 'beta' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check first-release acceptance gate
+        env:
+          RELEASE_READY: ${{ vars.FILEEL_RELEASE_READY }}
+        run: |
+          if [[ "$RELEASE_READY" != true ]]; then
+            echo '::error::Publication is locked until installed-app update tests and clean-Mac acceptance pass'
+            exit 1
+          fi
+      - name: Plan this channel's release
+        run: python3 Scripts/release.py plan
+      - name: Sign, notarize and package
+        env:
+          FILEEL_CERTIFICATE_P12: ${{ secrets.FILEEL_CERTIFICATE_P12 }}
+          FILEEL_CERTIFICATE_PASSWORD: ${{ secrets.FILEEL_CERTIFICATE_PASSWORD }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
+        run: python3 Scripts/release.py build
+      - name: Publish verified downloads and update feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
+        run: python3 Scripts/release.py publish

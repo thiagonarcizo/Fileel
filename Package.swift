@@ -10,7 +10,7 @@ let package = Package(
         .target(name: "FileelCore", path: "Fileel", exclude: [
             "MyApp.swift", "ContentView.swift", "Brand.swift", "IconArtwork.swift", "WheelAppearance.swift", "FloatingShelf.swift", "OperationEditor.swift", "OnboardingView.swift", "MediaToolInspector.swift", "SettingsView.swift", "AppModel.swift", "DragController.swift", "ImageEditorView.swift", "MediaPreviewView.swift", "FilePreviewView.swift", "Assets.xcassets", "FileelIcon.icon", "Fileel.entitlements"
         ]),
-        .testTarget(name: "FileelCoreTests", dependencies: ["FileelCore"], path: "Tests")
+        .testTarget(name: "FileelCoreTests", dependencies: ["FileelCore"], path: "Tests", exclude: ["Release"])
     ],
     swiftLanguageModes: [.v5]
 )
