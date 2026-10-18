@@ -13,9 +13,9 @@ on:
 permissions:
   contents: read
 
-# serialize both channels so neither can overwrite the other's published feed
+# keep each channel's pending release separate while its active publication finishes
 concurrency:
-  group: fileel-release
+  group: fileel-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -48,8 +48,12 @@ jobs:
             exit 1
           fi
       - name: Plan this channel's release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 Scripts/release.py plan
       - name: Prepare conversion engines without signing credentials
+        if: steps.plan.outputs.current == 'true'
         run: |
           brew install cmake ninja pkgconf
           python3 Scripts/build-runtimes.py
@@ -58,6 +62,7 @@ jobs:
           python3 -m venv build/dmg-tools
           build/dmg-tools/bin/python3 -m pip install --require-hashes --only-binary=:all: -r Distribution/dmg-requirements.txt
       - name: Test the prepared conversion engines
+        if: steps.plan.outputs.current == 'true'
         run: |
           FILEEL_FFMPEG="$PWD/build/runtime/payload/MacOS/ffmpeg" \
           FILEEL_FFPROBE="$PWD/build/runtime/payload/MacOS/ffprobe" \
@@ -67,6 +72,7 @@ jobs:
           FILEEL_SOFFICE="$PWD/build/runtime/payload/Helpers/LibreOffice.app/Contents/MacOS/soffice" swift test
           python3 Scripts/verify-runtimes.py build/runtime/payload
       - name: Sign, notarize and package
+        if: steps.plan.outputs.current == 'true'
         env:
           FILEEL_CERTIFICATE_P12: ${{ secrets.FILEEL_CERTIFICATE_P12 }}
           FILEEL_CERTIFICATE_PASSWORD: ${{ secrets.FILEEL_CERTIFICATE_PASSWORD }}
@@ -76,14 +82,15 @@ jobs:
           FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
         run: python3 Scripts/release.py build
       - name: Publish verified downloads and update feed
-        if: (github.event_name == 'push' && vars.FILEEL_RELEASE_READY == 'true') || inputs.publish_update
+        if: steps.plan.outputs.current == 'true' && ((github.event_name == 'push' && vars.FILEEL_RELEASE_READY == 'true') || inputs.publish_update)
         env:
           GH_TOKEN: ${{ github.token }}
           FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
           FILEEL_RELEASE_READY: ${{ vars.FILEEL_RELEASE_READY }}
         run: python3 Scripts/release.py publish
       - name: Verify a private draft upload and remove it
-        if: (github.event_name == 'workflow_dispatch' && !inputs.publish_update) || (github.event_name == 'push' && vars.FILEEL_RELEASE_READY != 'true')
+        if: steps.plan.outputs.current == 'true' && ((github.event_name == 'workflow_dispatch' && !inputs.publish_update) || (github.event_name == 'push' && vars.FILEEL_RELEASE_READY != 'true'))
         env:
           GH_TOKEN: ${{ github.token }}
+          FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
         run: python3 Scripts/release.py rehearse
