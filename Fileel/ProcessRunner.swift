@@ -81,6 +81,26 @@ final class ProcessRunner: @unchecked Sendable {
 
 // prefer shipped engines, then explicit overrides, then standard local installs
 enum Engines {
+    static let names = ["ffmpeg", "ffprobe", "pandoc", "soffice", "7zz", "gs"]
+    static var expectsBundled: Bool {
+        #if DEBUG
+        return areBundled
+        #else
+        return true
+        #endif
+    }
+
+    // a release must not look healthy just because a developer's tools happen to be installed
+    static func readiness(requiresBundled: Bool = expectsBundled, bundle: URL = Bundle.main.bundleURL,
+                          locateTool: (String) -> URL? = locate) -> [EngineReadiness] {
+        let root = bundle.resolvingSymlinksInPath().path + "/"
+        return names.map { name in
+            let url = locateTool(name)
+            let included = url?.resolvingSymlinksInPath().path.hasPrefix(root) ?? false
+            let source: EngineReadiness.Source = included ? .included : url != nil && !requiresBundled ? .local : .missing
+            return EngineReadiness(name: name, source: source)
+        }
+    }
     static var areBundled: Bool {
         Bundle.main.resourceURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("Engines/manifest.json").path) } ?? false
     }
@@ -109,6 +129,20 @@ enum Engines {
         }
         return url
     }
+}
+
+// keep optional companion apps separate from the six conversion engines that ship with fileel
+struct EngineReadiness: Identifiable, Sendable {
+    enum Source: Sendable { case included, local, missing }
+    let name: String
+    let source: Source
+    var id: String { name }
+    var available: Bool { source != .missing }
+    var title: String {
+        ["ffmpeg": "Video & Audio", "ffprobe": "Media Inspection", "pandoc": "Documents",
+         "soffice": "Office Formats", "7zz": "Archives", "gs": "PDF Compression"][name] ?? name
+    }
+    var status: String { source == .included ? "Included" : source == .local ? "Local" : "Needs Setup" }
 }
 
 // stage each job privately and publish only complete output without replacing an existing file
