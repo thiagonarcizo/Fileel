@@ -1,3 +1,5 @@
+https://github.com/user-attachments/assets/6b31c486-85f5-4b25-9001-1300ad8d5c84
+
 <p align="center">
   <img src="docs/brand/cover.svg" alt="Fileel — your files, one gesture away" width="100%">
 </p>
