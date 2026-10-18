@@ -134,9 +134,7 @@ enum MediaEngine {
             try encode(input, output: output, options: options, runner: runner,
                        filters: ["drawbox=x=\(options.x):y=\(options.y):w=\(options.width):h=\(options.height):color=black:t=fill:enable='between(t,\(options.start),\(options.end))'"])
         case .bleep:
-            guard options.start >= 0, options.end > options.start else { throw FileelError.message("Enter the time range to replace.") }
-            let filter = "[0:a]volume=0:enable='between(t,\(options.start),\(options.end))'[base];sine=frequency=1000:sample_rate=48000,volume=0.15,atrim=duration=\(options.end - options.start),adelay=\(Int(options.start * 1000)):all=1[tone];[base][tone]amix=inputs=2:duration=first:normalize=0[out]"
-            try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-i", input.path, "-filter_complex", filter, "-map", "[out]", output.path])
+            try BleepEngine.process(input, output: output, options: options, runner: runner)
         case .snapshots:
             try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-ss", String(max(0, options.start)), "-i", input.path, "-frames:v", "1", output.path])
         case .visualizer:

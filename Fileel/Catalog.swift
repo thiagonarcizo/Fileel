@@ -286,6 +286,8 @@ struct OperationOptions: Sendable, Equatable {
     var y = 0
     var start = 0.0
     var end = 10.0
+    var bleepRanges: [AudioRedactionRange] = []
+    var usesBleepRanges = false
     var speed = 1.0
     var channels = 1
     var autoAdjust = false

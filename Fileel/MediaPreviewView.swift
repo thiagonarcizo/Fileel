@@ -111,7 +111,10 @@ struct MediaPreviewView: View {
     var onVideoSize: (CGSize) -> Void = { _ in }
     private var editsRectangle: Bool { operation == .tool(.cropVideo) || operation == .tool(.redactVideo) }
     private var isVideo: Bool { FileFamily.detect(url) == .video }
-    private var editsRange: Bool { [.tool(.trimAudio), .tool(.trimVideo), .tool(.bleep), .tool(.redactVideo)].contains(operation) }
+    private var editsRange: Bool {
+        if operation == .tool(.bleep) { return !options.bleepRanges.isEmpty }
+        return [.tool(.trimAudio), .tool(.trimVideo), .tool(.redactVideo)].contains(operation)
+    }
     private var speed: Double { operation == .tool(.speed) ? options.speed : 1 }
 
     var body: some View {
@@ -156,11 +159,12 @@ struct MediaPreviewView: View {
                 VStack(spacing: 12) {
                     MediaTimeline(waveform: media.waveform, duration: media.duration, current: media.current,
                                   start: $options.start, end: $options.end, editsRange: editsRange,
-                                  cuts: operation == .tool(.splitVideo) ? options.splitPoints.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) } : [], seek: media.seek)
+                                  cuts: operation == .tool(.splitVideo) ? options.splitPoints.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) } : [],
+                                  markedRanges: operation == .tool(.bleep) ? options.bleepRanges : [], seek: media.seek)
                         .frame(height: 68)
                     HStack(spacing: 12) {
                         Button { media.toggle(start: editsRange ? options.start : 0, end: editsRange ? options.end : media.duration, rate: speed) } label: {
-                            Label(media.playing ? "Pause" : "Play", systemImage: media.playing ? "pause.fill" : "play.fill")
+                            Label(media.playing ? "Pause" : operation == .tool(.bleep) ? "Play Original" : "Play", systemImage: media.playing ? "pause.fill" : "play.fill")
                         }.controlSize(.small).keyboardShortcut(.space, modifiers: []).help("Play / Pause (Space)")
                         if isVideo {
                             Button { media.player.pause(); media.player.currentItem?.step(byCount: -1) } label: { Image(systemName: "backward.frame") }.help("Previous frame")
@@ -178,15 +182,15 @@ struct MediaPreviewView: View {
         .task(id: url) { await media.load(url) }
         .onChange(of: jobs.busy) { _, busy in if busy { media.player.pause() } }
         .onChange(of: media.duration) { _, duration in
+            resetSelection()
             onDuration(duration)
-            if duration > 0, editsRange { options.start = 0; options.end = duration; media.rangeEnd = duration }
         }
         .onChange(of: operation) { _, _ in
             media.player.pause()
-            if media.duration > 0, editsRange { options.start = 0; options.end = media.duration }
-            media.rangeEnd = editsRange ? options.end : nil
+            resetSelection()
         }
         .onChange(of: options.end) { _, end in media.rangeEnd = editsRange ? end : nil }
+        .onChange(of: editsRange) { _, editing in media.rangeEnd = editing ? options.end : nil }
         .onChange(of: options.speed) { _, _ in if media.playing { media.player.rate = Float(speed) } }
         .onChange(of: media.current) { _, current in
             onPosition(current)
@@ -200,6 +204,17 @@ struct MediaPreviewView: View {
         }
         .onDisappear { media.stop() }
     }
+
+    private func resetSelection() {
+        guard media.duration > 0 else { return }
+        if operation == .tool(.bleep) {
+            if !options.usesBleepRanges {
+                options.usesBleepRanges = true
+            }
+            if let first = options.bleepRanges.first { options.start = first.start; options.end = first.end }
+        } else if editsRange { options.start = 0; options.end = media.duration }
+        media.rangeEnd = editsRange ? options.end : nil
+    }
 }
 
 private struct MediaTimeline: View {
@@ -210,6 +225,7 @@ private struct MediaTimeline: View {
     @Binding var end: Double
     let editsRange: Bool
     let cuts: [Double]
+    let markedRanges: [AudioRedactionRange]
     var seek: (Double) -> Void
     @State private var handle: Int?
 
@@ -219,6 +235,11 @@ private struct MediaTimeline: View {
                 let startX = TimelineGeometry.position(at: start, width: size.width, duration: duration)
                 let endX = TimelineGeometry.position(at: end, width: size.width, duration: duration)
                 context.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 6), with: .color(Color(nsColor: .controlBackgroundColor)))
+                for range in markedRanges {
+                    let a = TimelineGeometry.position(at: range.start, width: size.width, duration: duration)
+                    let b = TimelineGeometry.position(at: range.end, width: size.width, duration: duration)
+                    context.fill(Path(roundedRect: CGRect(x: a, y: 0, width: max(0, b - a), height: size.height), cornerRadius: 4), with: .color(.accentColor.opacity(0.12)))
+                }
                 if editsRange {
                     context.fill(Path(CGRect(x: startX, y: 0, width: max(0, endX - startX), height: size.height)), with: .color(.accentColor.opacity(0.14)))
                 }
