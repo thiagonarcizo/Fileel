@@ -18,31 +18,33 @@ final class MediaPreviewModel: ObservableObject {
     @Published var error: String?
     private var observer: Any?
     private var playbackObservation: NSKeyValueObservation?
+    private var previewSource: MediaPreviewSource?
+    private var previewRunner: ProcessRunner?
+    private var loadID = UUID()
     var rangeEnd: Double?
 
     func load(_ url: URL) async {
         stop()
+        let id = loadID
+        let runner = ProcessRunner()
+        previewRunner = runner
+        var pending: MediaPreviewSource?
         do {
-            let asset = AVURLAsset(url: url)
-            guard try await asset.load(.isPlayable) else {
-                throw FileelError.message("This format can be processed, but the system player cannot preview it. Use Quick Look or convert a copy to MP4 or M4A first.")
-            }
-            let time = try await asset.load(.duration).seconds
+            let prepared = try await MediaPreviewSource.prepare(url, runner: runner)
+            pending = prepared
             try Task.checkCancellation()
-            guard time.isFinite, time > 0 else { throw FileelError.message("The media duration is unavailable.") }
-            if let track = try await asset.loadTracks(withMediaType: .video).first {
-                let size = try await track.load(.naturalSize)
-                let transform = try await track.load(.preferredTransform)
-                let displayed = size.applying(transform)
-                try Task.checkCancellation()
-                videoSize = CGSize(width: abs(displayed.width), height: abs(displayed.height))
-            }
+            guard loadID == id else { throw CancellationError() }
+            let time = prepared.duration
+            let asset = AVURLAsset(url: prepared.url)
+            previewSource = prepared
+            pending = nil
+            videoSize = prepared.videoSize
             duration = time
             current = 0
             player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
             observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0 / 30, preferredTimescale: 600), queue: .main) { [weak self] time in
                 MainActor.assumeIsolated {
-                    guard let self else { return }
+                    guard let self, self.loadID == id else { return }
                     self.current = time.seconds
                     if let rangeEnd = self.rangeEnd, self.current >= rangeEnd { self.player.pause() }
                 }
@@ -50,15 +52,19 @@ final class MediaPreviewModel: ObservableObject {
             playbackObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
                 let playing = player.timeControlStatus == .playing
                 guard let model = self else { return }
-                Task { @MainActor in model.playing = playing }
+                Task { @MainActor in if model.loadID == id { model.playing = playing } }
             }
             ready = true
             error = nil
-            let peaks = (try? await WaveformSampler.read(url, duration: time)) ?? []
+            let peaks = (try? await WaveformSampler.read(prepared.url, duration: time)) ?? []
             try Task.checkCancellation()
+            guard loadID == id else { return }
             waveform = peaks
-        } catch is CancellationError { return }
-        catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+        } catch is CancellationError { pending?.removeTemporaryFiles() }
+        catch {
+            pending?.removeTemporaryFiles()
+            if !Task.isCancelled, loadID == id { self.error = error.localizedDescription }
+        }
     }
 
     func seek(_ seconds: Double) {
@@ -79,11 +85,16 @@ final class MediaPreviewModel: ObservableObject {
     }
 
     func stop() {
+        loadID = UUID()
+        previewRunner?.cancel()
+        previewRunner = nil
         player.pause()
         if let observer { player.removeTimeObserver(observer) }
         observer = nil
         playbackObservation = nil
         player.replaceCurrentItem(with: nil)
+        previewSource?.removeTemporaryFiles()
+        previewSource = nil
         ready = false; playing = false; waveform = []; videoSize = .zero; duration = 0; current = 0; rangeEnd = nil; error = nil
     }
 }
@@ -134,7 +145,12 @@ struct MediaPreviewView: View {
                             Text("Ready to preview").font(.caption).foregroundStyle(.secondary)
                         }.padding(24)
                     }
-                } else { ProgressView().controlSize(.small) }
+                } else {
+                    VStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Preparing Preview").font(.callout).foregroundStyle(.secondary)
+                    }
+                }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             if media.ready {
                 VStack(spacing: 12) {

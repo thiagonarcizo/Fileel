@@ -1,6 +1,6 @@
 # v0 coverage and acceptance
 
-The requested v0 includes all functionality described by the Tangerine public demo and website on 2026-10-18, plus the additional tools requested in this chat. Reference: https://tangerineformac.com/
+The v0 scope includes local file conversions, contextual editing tools, drag shortcuts, floating files and signed automatic updates, together with the interaction and design requirements tracked below
 
 This is a development checklist. The app is not described as feature-complete solely because an operation exists in the catalog
 
@@ -18,7 +18,7 @@ This is a development checklist. The app is not described as feature-complete so
 | Subtitles | SRT, VTT, TXT | Offset, playback speed, join |
 | Archives | ZIP, TAR, TAR.GZ | Extraction, listing, integrity test, AES-encrypted ZIP |
 
-The six reference file actions are implemented: AirDrop, floating files, copy, move, copy path, and Terminal. Additional actions: Quick Look, reveal in Finder, batch rename, duplicate, and SHA-256
+The core file actions are implemented: AirDrop, floating files, copy, move, copy path, and Terminal. Additional actions: Quick Look, reveal in Finder, batch rename, duplicate, and SHA-256
 
 Input aliases and format families are declared in `Fileel/Catalog.swift`. An exact count of 249 equivalent conversion paths has not been audited. Input format variants, legacy formats, encryption, embedded fonts, and unusual codecs need dedicated fixtures before making that claim
 
@@ -29,7 +29,7 @@ Input aliases and format families are declared in `Fileel/Catalog.swift`. An exa
 - The image editing canvas implements a persistent crop frame with move/resize handles, aspect presets, ratio locking, orientation changes, arrows, rectangles, ellipses, text, numbered callouts, and undo/redo. Exported pixels and crop geometry are tested; complete pointer interaction QA remains outstanding
 - Background editing now implements solid colors, gradients, an image backdrop, spacing, and rounded source corners. Exported pixels are tested; live preview layout still needs interactive QA
 - Metadata editing now supports author/artist, title, camera make/model, image lens, signed latitude/longitude, removal of location, and removal of existing tags. Image tags are tested; media edits preserve encoded audio/video stream hashes through remuxing
-- Native media previews implement playback, scrubbing, frame stepping, a waveform decoded from the actual audio, draggable range handles, a shared image/video crop frame and a Space playback shortcut. Native-unplayable formats still need a proxy-preview path; multiple bleep ranges need direct editing
+- Native media previews implement playback, scrubbing, frame stepping, a waveform decoded from the actual audio, draggable range handles, a shared image/video crop frame and a Space playback shortcut. Unsupported playback formats use an isolated local proxy, with a fast remux attempted first; smaller video proxies retain original pixel coordinates for cropping. Tests decode actual proxy frames/audio and verify cleanup, cancellation and unchanged originals. Multiple bleep ranges still need direct editing
 - Image redaction implements manual color fill and randomized mosaic regions, plus local face/text detection. Randomized mosaic is tested to be independent of covered source pixels. Tracked video regions, multiple bleep ranges, and exhaustive detection review remain outstanding
 - PDF-to-DOCX and PAGES now use the office engine's positioned-text/graphics importer when each page contains selectable text and its letters survive import. Missing or substituted letters trigger the extracted-text fallback; scanned PDFs retain local OCR. Complex tables, mixed scans and unusual fonts still need broader fixtures; PDF-to-EPUB remains a reflowed text conversion
 - PDF-to-PPTX imports editable text and vector shapes. The page-image fallback preserves aspect ratios and centers mixed page orientations rather than stretching them. Generated round-trip fixtures verify page count, portrait geometry, editable text and artwork position
@@ -41,7 +41,7 @@ Input aliases and format families are declared in `Fileel/Catalog.swift`. An exa
 - Watermark preview and export use the same vector PDF renderer. Tests verify all four page rotations, artwork placement, selectable source/watermark text, chosen metadata and cancellation
 - Raster PDF export and OCR share that explicit page transform, preserving all four rotations across macOS versions; invalid or excessive raster resolutions fail before bitmap allocation
 - The complete runtime-bearing Developer ID app and its branded DMG have passed Apple notarization, ticket validation and update-signature verification. An isolated signed app has completed real Sparkle installation/relaunch, invalid-download rejection, preference retention and a stable/beta/stable round trip; the repeatable test also covers background checks. The production updater's visual flow and the GitHub signing/upload rehearsal still require acceptance
-- The runtime payload contains pinned ARM64 conversion tools, codec dependencies, upstream notices and a corresponding source archive. Its 223 native executables/libraries declare macOS 14 or earlier. All 56 native tests passed with Homebrew, `/usr/local` and the system LibreOffice installation denied to the test process. A separate clean-Mac installation and complete signed-app acceptance remain outstanding
+- The runtime payload contains pinned ARM64 conversion tools, codec dependencies, upstream notices and a corresponding source archive. Its 223 native executables/libraries declare macOS 14 or earlier. All 64 native tests passed with Homebrew, `/usr/local`, the system LibreOffice installation and build-only runtime dependencies denied to the test process. A separate clean-Mac installation and complete signed-app acceptance remain outstanding
 - Collage previews include every selected source and share gradient/rounded-corner rendering with exports. Full image decoding no longer silently shrinks originals wider than 16384 pixels
 
 ## Acceptance evidence
