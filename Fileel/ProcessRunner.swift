@@ -28,6 +28,19 @@ final class ProcessRunner: @unchecked Sendable {
         process.executableURL = executable
         process.arguments = arguments
         process.currentDirectoryURL = directory
+        var environment = ProcessInfo.processInfo.environment
+        if executable.lastPathComponent == "soffice" {
+            // python caches inside the office bundle would invalidate its signature after the first conversion
+            environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        }
+        if executable.lastPathComponent == "gs",
+           let resources = Bundle.main.resourceURL?.appendingPathComponent("Ghostscript"),
+           FileManager.default.fileExists(atPath: resources.path) {
+            // the bundled pdf engine must find its data after the app moves between folders
+            environment["GS_LIB"] = ["Resource/Init", "Resource/Font", "lib"].map { resources.appendingPathComponent($0).path }.joined(separator: ":")
+            environment["GS_ICC_PROFILES"] = resources.appendingPathComponent("iccprofiles").path
+        }
+        process.environment = environment
         let log = FileManager.default.temporaryDirectory.appendingPathComponent("fileel-log-\(UUID().uuidString)")
         FileManager.default.createFile(atPath: log.path, contents: nil)
         let logHandle = try FileHandle(forWritingTo: log)
@@ -68,9 +81,20 @@ final class ProcessRunner: @unchecked Sendable {
 
 // prefer shipped engines, then explicit overrides, then standard local installs
 enum Engines {
+    static var areBundled: Bool {
+        Bundle.main.resourceURL.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("Engines/manifest.json").path) } ?? false
+    }
+
+    static func isBundled(_ name: String) -> Bool {
+        guard let url = locate(name) else { return false }
+        return url.resolvingSymlinksInPath().path.hasPrefix(Bundle.main.bundleURL.resolvingSymlinksInPath().path + "/")
+    }
+
     static func locate(_ name: String) -> URL? {
         let override = ProcessInfo.processInfo.environment["FILEEL_\(name.uppercased())"]
         let paths = [
+            Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent(name).path,
+            name == "soffice" ? Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/LibreOffice.app/Contents/MacOS/soffice").path : nil,
             Bundle.main.resourceURL?.appendingPathComponent("Engines/\(name)").path,
             override,
             name == "soffice" ? "/Applications/LibreOffice.app/Contents/MacOS/soffice" : nil,

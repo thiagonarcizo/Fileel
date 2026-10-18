@@ -1,0 +1,95 @@
+name: Validate
+
+on:
+  pull_request:
+    branches: [main, dev]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# superseded pull requests should not keep consuming mac runners or publish stale check results
+concurrency:
+  group: fileel-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  native:
+    name: Native build and engine tests
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install test engines
+        run: |
+          brew install ffmpeg-full pandoc sevenzip ghostscript
+          brew install --cask libreoffice
+          echo "FILEEL_FFMPEG=$(brew --prefix ffmpeg-full)/bin/ffmpeg" >> "$GITHUB_ENV"
+          echo "FILEEL_FFPROBE=$(brew --prefix ffmpeg-full)/bin/ffprobe" >> "$GITHUB_ENV"
+      - name: Verify release tooling
+        run: python3 -m unittest discover -s Tests/Release -v
+      - name: Test native engines
+        run: swift test
+      - name: Build the macOS app
+        run: |
+          xcodebuild build -project Fileel.xcodeproj -scheme Fileel \
+            -configuration Release -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath "$RUNNER_TEMP/FileelValidation" CODE_SIGNING_ALLOWED=NO
+      - name: Verify the built update configuration
+        run: python3 Scripts/release.py verify-bundle "$RUNNER_TEMP/FileelValidation/Build/Products/Release/Fileel.app"
+
+  secrets:
+    name: Secret scan
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan full history with redacted findings
+        run: |
+          brew install gitleaks
+          gitleaks git . --redact=100 --no-banner
+
+  dependencies:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: moderate
+
+  codeql:
+    name: CodeQL Swift
+    # codeql's compiled-language tracing needs rosetta on arm hosts, so use an intel runner for analysis
+    runs-on: macos-26-intel
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
+        with:
+          languages: swift
+          build-mode: manual
+          queries: security-and-quality
+      - name: Build for analysis
+        run: |
+          xcodebuild build -project Fileel.xcodeproj -scheme Fileel \
+            -configuration Release -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/FileelAnalysis" ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4
+        with:
+          category: swift

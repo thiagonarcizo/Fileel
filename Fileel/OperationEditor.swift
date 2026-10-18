@@ -19,7 +19,7 @@ final class OperationWindowController: NSWindowController, NSWindowDelegate {
         let window = NSWindow(contentRect: rect, styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = operation.title.replacingOccurrences(of: "…", with: "")
         window.isReleasedWhenClosed = false
-        let host = NSHostingView(rootView: OperationEditor(files: files, operation: operation))
+        let host = NSHostingView(rootView: OperationEditor(files: files, operation: operation, onFinished: { [weak window] in window?.close() }))
         host.sizingOptions = []
         host.frame = rect
         host.autoresizingMask = [.width, .height]
@@ -36,6 +36,7 @@ final class OperationWindowController: NSWindowController, NSWindowDelegate {
 private struct OperationEditor: View {
     let files: [URL]
     let operation: FileOperation
+    let onFinished: () -> Void
     @ObservedObject private var jobs = AppModel.shared
     @State private var options: OperationOptions
     @State private var selectedMark: UUID?
@@ -46,9 +47,15 @@ private struct OperationEditor: View {
     @State private var playhead = 0.0
     @State private var duration = 0.0
     @State private var videoSize = CGSize.zero
-    init(files: [URL], operation: FileOperation) {
+    @State private var imageSize = CGSize.zero
+    @State private var copying = false
+    @State private var clipboardStatus: String?
+    @State private var clipboardTask: Task<Void, Never>?
+    @State private var pdfCalculating = true
+    init(files: [URL], operation: FileOperation, onFinished: @escaping () -> Void) {
         self.files = files
         self.operation = operation
+        self.onFinished = onFinished
         _options = State(initialValue: AppModel.shared.defaults())
     }
     private var family: FileFamily { FileFamily.detect(files[0]) }
@@ -71,27 +78,48 @@ private struct OperationEditor: View {
                 }
                 if jobs.busy { ProgressView().controlSize(.small); Button("Cancel") { jobs.cancel() } }
                 else {
-                    Button(isMarkup || family == .image ? "Save Copy…" : operation.title.replacingOccurrences(of: "…", with: "")) {
+                    if family == .image, operation != .tool(.compress) {
+                        Button(copying ? "Copying…" : "Copy", action: copyImage)
+                            .disabled(copying || requirement != nil)
+                            .keyboardShortcut("c", modifiers: [.command, .shift])
+                            .help("Copy the edited image at full resolution")
+                    }
+                    Button(isMarkup || family == .image ? "Save Copy" : operation.title.replacingOccurrences(of: "…", with: "")) {
                         jobs.run(operation, inputs: files, options: options)
                         jobID = jobs.workspaceJobID
-                    }.buttonStyle(.borderedProminent).disabled(requirement != nil).keyboardShortcut("s", modifiers: .command)
+                    }.buttonStyle(.borderedProminent)
+                        .disabled(copying || requirement != nil || (operation == .tool(.compress) && pdfCalculating))
+                        .keyboardShortcut("s", modifiers: .command)
                 }
             }.padding(.horizontal, 22).padding(.vertical, 16)
             Divider()
+            if operation == .tool(.organizePDF) {
+                PDFOrganizerView(url: files[0], options: $options)
+            } else if operation == .tool(.compress) {
+                CompressionEditor(files: files, options: $options, onCalculating: { pdfCalculating = $0 })
+            } else {
             HSplitView {
                 Group {
-                    if family == .image {
-                        ImageEditorView(url: files[0], operation: operation, options: $options, dedicated: true, selectedAnnotation: $selectedMark)
+                    if operation == .tool(.collage) {
+                        CollagePreviewView(files: files, options: options)
+                    } else if family == .image {
+                        ImageEditorView(url: files[0], operation: operation, options: $options, dedicated: true, selectedAnnotation: $selectedMark,
+                                        onDimensions: { imageSize = $0 })
                     } else if family == .video || family == .audio {
                         MediaPreviewView(url: files[0], operation: operation, options: $options,
                                          onPosition: { playhead = $0 }, onDuration: { duration = $0 }, onVideoSize: { videoSize = $0 })
+                    } else if operation == .tool(.watermarkPDF) {
+                        PDFWatermarkPreview(url: files[0], options: options)
                     } else { FilePreviewView(url: files[0]) }
                 }.frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
                 inspector.frame(width: 286).disabled(jobs.busy)
             }
+            }
             Divider()
             HStack(spacing: 12) {
-                if let job {
+                if let clipboardStatus {
+                    Text(clipboardStatus).font(.caption).foregroundStyle(.secondary)
+                } else if let job {
                     Image(systemName: job.state == .completed ? "checkmark.circle.fill" : job.state == .failed ? "exclamationmark.triangle" : "clock").foregroundStyle(job.state == .completed ? Color.accentColor : .secondary)
                     Text(job.state == .completed ? "Copy saved" : job.detail).font(.caption).lineLimit(1)
                     if !job.outputs.isEmpty { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(job.outputs) }.controlSize(.small) }
@@ -100,6 +128,9 @@ private struct OperationEditor: View {
 
             }.padding(.horizontal, 22).padding(.vertical, 12)
         }.background(Color(nsColor: .windowBackgroundColor))
+            .onChange(of: options) { _, _ in clipboardStatus = nil; jobID = nil }
+            .onChange(of: job?.state) { _, state in if state == .completed { onFinished() } }
+            .onDisappear { clipboardTask?.cancel() }
     }
 
     @ViewBuilder private var inspector: some View {
@@ -107,23 +138,27 @@ private struct OperationEditor: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     adjustmentSection("Light", symbol: "sun.max", expanded: $light) {
-                        AdjustmentSlider("Exposure", value: $options.exposure, range: -3...3)
-                        AdjustmentSlider("Brightness", value: $options.brightness, range: -0.4...0.4)
-                        AdjustmentSlider("Contrast", value: $options.contrast, range: 0.5...1.5)
-                        AdjustmentSlider("Highlights", value: $options.highlights, range: 0...1)
-                        AdjustmentSlider("Shadows", value: $options.shadows, range: 0...1)
+                        AdjustmentSlider("Exposure", value: $options.exposure, range: -3...3, defaultValue: 0)
+                        AdjustmentSlider("Brightness", value: $options.brightness, range: -0.4...0.4, defaultValue: 0)
+                        AdjustmentSlider("Contrast", value: $options.contrast, range: 0.5...1.5, defaultValue: 1)
+                        AdjustmentSlider("Highlights", value: $options.highlights, range: 0...1, defaultValue: 1)
+                        AdjustmentSlider("Shadows", value: $options.shadows, range: 0...1, defaultValue: 0)
                     }
                     adjustmentSection("Color", symbol: "circle.lefthalf.filled", expanded: $color) {
-                        AdjustmentSlider("Saturation", value: $options.saturation, range: 0...2)
-                        AdjustmentSlider("Vibrance", value: $options.vibrance, range: -1...1)
-                        AdjustmentSlider("Temperature", value: $options.temperature, range: 2500...10000, decimals: 0)
-                        AdjustmentSlider("Tint", value: $options.tint, range: -150...150, decimals: 0)
+                        AdjustmentSlider("Saturation", value: $options.saturation, range: 0...2, defaultValue: 1)
+                        AdjustmentSlider("Vibrance", value: $options.vibrance, range: -1...1, defaultValue: 0)
+                        AdjustmentSlider("Temperature", value: $options.temperature, range: 2500...10000, defaultValue: 6500, decimals: 0)
+                        AdjustmentSlider("Tint", value: $options.tint, range: -150...150, defaultValue: 0, decimals: 0)
                     }
                     adjustmentSection("Detail", symbol: "circle.dotted", expanded: $detail) {
-                        AdjustmentSlider("Sharpness", value: $options.sharpness, range: 0...2)
+                        AdjustmentSlider("Sharpness", value: $options.sharpness, range: 0...2, defaultValue: 0)
                     }
                 }.padding(22)
             }
+        } else if operation == .tool(.watermarkPDF) {
+            PDFWatermarkInspector(options: $options)
+        } else if operation == .tool(.cropImage) {
+            CropInspector(size: imageSize, options: $options)
         } else if isMarkup {
             MarkupInspector(operation: operation, options: $options, selected: $selectedMark)
         } else if family == .video || family == .audio {
@@ -144,6 +179,27 @@ private struct OperationEditor: View {
         options.saturation = 1; options.vibrance = 0; options.temperature = 6500; options.tint = 0; options.sharpness = 0
         jobID = nil
     }
+
+    // flatten full-resolution edited pixels into PNG data without saving a temporary output file
+    private func copyImage() {
+        guard case .tool(let tool) = operation, !copying else { return }
+        let snapshot = options
+        let inputs = files
+        copying = true; clipboardStatus = nil
+        clipboardTask = Task {
+            defer { copying = false; clipboardTask = nil }
+            let worker = Task.detached(priority: .userInitiated) { try ImageEngine.clipboardPNG(inputs, tool: tool, options: snapshot) }
+            do {
+                let data = try await withTaskCancellationHandler(operation: { try await worker.value }, onCancel: { worker.cancel() })
+                try Task.checkCancellation()
+                NSPasteboard.general.clearContents()
+                guard NSPasteboard.general.setData(data, forType: .png) else { throw FileelError.message("The image could not be copied.") }
+                clipboardStatus = "Image copied to clipboard"
+                onFinished()
+            } catch is CancellationError { }
+            catch { clipboardStatus = error.localizedDescription }
+        }
+    }
 }
 
 // numeric values and reset gestures make photo adjustments precise without a generic form
@@ -151,9 +207,10 @@ private struct AdjustmentSlider: View {
     let title: String
     @Binding var value: Double
     let range: ClosedRange<Double>
+    let defaultValue: Double
     var decimals = 2
-    init(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, decimals: Int = 2) {
-        self.title = title; _value = value; self.range = range; self.decimals = decimals
+    init(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, defaultValue: Double, decimals: Int = 2) {
+        self.title = title; _value = value; self.range = range; self.defaultValue = defaultValue; self.decimals = decimals
     }
     var body: some View {
         VStack(spacing: 6) {
@@ -164,7 +221,7 @@ private struct AdjustmentSlider: View {
                     .labelsHidden().multilineTextAlignment(.trailing).textFieldStyle(.plain).font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(.secondary).frame(width: 62)
             }
-            Slider(value: $value, in: range).controlSize(.small).accessibilityLabel(title)
+            ResettableSlider(title: title, value: $value, range: range, defaultValue: defaultValue)
         }
     }
 }
@@ -197,10 +254,10 @@ private struct MarkupInspector: View {
                     })).textFieldStyle(.roundedBorder)
                     AdjustmentSlider("Stroke", value: Binding(get: { index.map { options.annotations[$0].thickness } ?? options.annotationThickness }, set: { value in
                         if let index { options.annotations[index].thickness = value } else { options.annotationThickness = value }
-                    }), range: 0.002...0.025, decimals: 3)
+                    }), range: 0.002...0.025, defaultValue: OperationOptions().annotationThickness, decimals: 3)
                     AdjustmentSlider("Text Size", value: Binding(get: { index.map { options.annotations[$0].fontScale } ?? options.annotationFontScale }, set: { value in
                         if let index { options.annotations[index].fontScale = value } else { options.annotationFontScale = value }
-                    }), range: 0.015...0.15, decimals: 3)
+                    }), range: 0.015...0.15, defaultValue: OperationOptions().annotationFontScale, decimals: 3)
                 } else {
                     Text("Random Mosaic generates new opaque blocks without using the covered pixels.").font(.caption).foregroundStyle(.secondary)
                     Divider()

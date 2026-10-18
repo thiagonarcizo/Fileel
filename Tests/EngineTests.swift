@@ -26,7 +26,9 @@ final class EngineTests: XCTestCase {
 
     func testImageConversionPreservesSizeAndOriginal() throws {
         for format in ["jpg", "png", "tiff", "heic", "webp", "avif"] {
-            let outputs = try perform(.convert(format))
+            let outputs: [URL]
+            do { outputs = try perform(.convert(format)) }
+            catch { XCTFail("\(format.uppercased()) conversion failed: \(error)"); continue }
             let image = try ImageEngine.load(outputs[0])
             XCTAssertEqual(image.width, 320, format)
             XCTAssertEqual(image.height, 180, format)
@@ -101,7 +103,7 @@ final class EngineTests: XCTestCase {
         let unknown = folder.appendingPathComponent("unknown.xyz")
         XCTAssertTrue(Catalog.operations(for: [source, unknown], mode: .convert).isEmpty)
         XCTAssertEqual(Catalog.operations(for: [source, unknown], mode: .actions).count, FileAction.allCases.count)
-        for tool in FileTool.allCases {
+        for tool in FileTool.available {
             XCTAssertTrue(FileFamily.allCases.contains { $0.tools.contains(tool) }, "Unrouted tool: \(tool)")
         }
     }

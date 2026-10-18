@@ -36,6 +36,7 @@ struct ImageEditorView: View {
     @StateObject private var preview = ImagePreviewModel()
     var dedicated = false
     var selectedAnnotation: Binding<UUID?>?
+    var onDimensions: (CGSize) -> Void = { _ in }
     @State private var restoringHistory = false
     private var kind: ImageAnnotation.Kind { operation == .tool(.redactImage) ? options.redactionKind : options.annotationKind }
     private var markHex: String { operation == .tool(.redactImage) ? options.redactionHex : options.annotationHex }
@@ -77,15 +78,18 @@ struct ImageEditorView: View {
                 if let error = preview.error {
                     ContentUnavailableView("Preview Unavailable", systemImage: "photo", description: Text(error))
                 } else if let image = compareOriginal ? preview.original : preview.image {
-                    ImageCanvas(image: image, dimensions: preview.dimensions, crop: cropMode ? cropRectangle : nil,
-                                cropEnabled: cropMode,
+                    ImageCanvas(image: image, dimensions: preview.dimensions, crop: nil,
+                                cropEnabled: false,
                                 drawing: annotationMode && !compareOriginal ? kind : nil,
                                 hex: markHex, text: options.text, thickness: options.annotationThickness, fontScale: options.annotationFontScale, editable: !compareOriginal,
                                 onCrop: setCrop, onMark: addMark, onUndo: undo, onRedo: redo)
+                        .overlay {
+                            if cropMode, !compareOriginal { CropOverlay(size: preview.dimensions, options: $options) }
+                        }
                 } else { ProgressView().controlSize(.small) }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             HStack {
-                Text(cropMode ? "Drag to select the area to keep" : annotationMode ? "Draw on the image · ⌘Z to undo" : "The original file stays unchanged")
+                Text(cropMode ? "Drag the handles to crop · drag inside to move" : annotationMode ? "Draw on the image · ⌘Z to undo" : "The original file stays unchanged")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if cropMode {
@@ -94,6 +98,10 @@ struct ImageEditorView: View {
             }.padding(.horizontal, 18).padding(.vertical, 10)
         }
         .task(id: request) { await preview.render(url: url, operation: operation, options: options) }
+        .onChange(of: preview.dimensions) { _, size in
+            onDimensions(size)
+            if cropMode, options.width <= 0, size.width > 0 { CropGeometry.apply(CGRect(origin: .zero, size: size), to: &options) }
+        }
         .onChange(of: operation) { _, operation in
             compareOriginal = false
             undoStack = []; redoStack = []
@@ -173,7 +181,7 @@ private struct ImageCanvas: NSViewRepresentable {
     func updateNSView(_ view: ImageCanvasView, context: Context) {
         view.image = image; view.dimensions = dimensions; view.crop = crop
         view.thickness = thickness; view.fontScale = fontScale
-        view.drawing = drawing; view.hex = hex; view.text = text; view.editable = editable; view.cropEnabled = cropEnabled
+        view.drawing = drawing; view.hex = hex; view.text = text; view.editable = editable; view.cropEnabled = false
         view.onCrop = onCrop; view.onMark = onMark; view.onUndo = onUndo; view.onRedo = onRedo
         view.needsDisplay = true
     }

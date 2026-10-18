@@ -38,7 +38,7 @@ enum FileFamily: String, CaseIterable, Sendable {
         switch self {
         case .image: return [.compress, .resize, .rotate, .metadata, .editImage, .annotateImage, .background, .cropImage, .redactImage, .removeBackground, .ocrImage, .createPDF, .collage]
         case .audio: return [.compress, .metadata, .normalize, .trimAudio, .channels, .visualizer, .bleep, .fade, .removeSilence, .joinAudio]
-        case .video: return [.compress, .resize, .rotate, .metadata, .trimVideo, .splitVideo, .cropVideo, .speed, .mute, .snapshots, .joinVideos, .redactVideo, .extractAudio, .embedSubtitles, .extractSubtitles]
+        case .video: return [.compress, .resize, .rotate, .metadata, .trimVideo, .cropVideo, .speed, .mute, .snapshots, .joinVideos, .redactVideo, .extractAudio, .embedSubtitles, .extractSubtitles]
         case .pdf: return [.compress, .metadata, .mergePDF, .splitPDF, .organizePDF, .protectPDF, .watermarkPDF, .ocrPDF]
         case .document: return [.wordCount, .compareDocuments, .cleanFormatting]
         case .spreadsheet: return [.exportSheet]
@@ -59,6 +59,7 @@ enum FileTool: String, CaseIterable, Identifiable, Sendable {
     case fade, removeSilence, joinAudio, protectPDF, watermarkPDF, ocrPDF
     case wordCount, compareDocuments, cleanFormatting, exportSheet
     case shiftSubtitles, speedSubtitles, joinSubtitles, listArchive, testArchive, encryptArchive
+    static var available: [FileTool] { allCases.filter { $0 != .splitVideo } }
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -208,11 +209,16 @@ enum FileOperation: Hashable, Sendable {
         case .convert(let format): return format.uppercased()
         case .tool(let tool):
             switch tool {
-            case .metadata: return "Metadata"
+            case .metadata: return "Info"
             case .editImage: return "Adjust"
+            case .removeBackground: return "Remove BG"
+            case .embedSubtitles: return "Add Subs"
+            case .extractSubtitles: return "Captions"
+            case .extractAudio: return "Audio"
+            case .mute: return "Mute"
             case .annotateImage: return "Annotate"
-            case .background: return "Background"
-            case .rotate: return "Rotate / Flip"
+            case .background: return "Canvas"
+            case .rotate: return "Rotate\nFlip"
             case .collage: return "Collage"
             case .normalize: return "Normalize"
             case .channels: return "Channels"
@@ -266,7 +272,7 @@ enum FileOperation: Hashable, Sendable {
 
 // pass immutable snapshots to workers so changing settings cannot alter a running job
 struct OperationOptions: Sendable, Equatable {
-    var quality = 0.82
+    var quality = 1.0
     var preserveMetadata = true
     var width = 0
     var height = 0
@@ -294,6 +300,13 @@ struct OperationOptions: Sendable, Equatable {
     var author = ""
     var title = ""
     var pageOrder = ""
+    var pdfPages: [PDFPageEdit] = []
+    var compressionReduction = 50.0
+    var watermarkHex = "707070"
+    var watermarkOpacity = 0.25
+    var watermarkFontSize = 42.0
+    var watermarkAngle = 35.0
+    var watermarkPosition = "center"
     var rotation = 0
     var splitPoints = ""
     var backgroundHex = "FFFFFF"
@@ -318,6 +331,10 @@ struct OperationOptions: Sendable, Equatable {
     var backgroundEndHex = "DCE6EF"
     var backgroundImage: URL?
     var cornerRadius = 0.0
+    var cropAspect = "free"
+    var cropAspectLocked = false
+    var cropPortrait = false
+    var cropCustomRatio = 1.0
     var cameraMake = ""
     var cameraModel = ""
     var lensModel = ""

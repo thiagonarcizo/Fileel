@@ -1,17 +1,21 @@
 # Third-party components
 
-No Tangerine code, binaries, artwork, icons, fonts, sounds, or extracted resources are included
+Fileel invokes conversion engines as separate processes. Release builds package the versions recorded in [the runtime lock](Distribution/runtime-lock.json). Their source archive is distributed alongside the app, with the build recipe described in [runtime distribution](docs/RUNTIME-DISTRIBUTION.md).
 
-Fileel invokes locally installed engines as separate processes. The current repository does not redistribute those engines
-
-| Component | Purpose | Upstream licensing reference |
+| Component | Purpose | License |
 | --- | --- | --- |
-| FFmpeg / FFprobe | Media encoding, filters, probing | https://ffmpeg.org/legal.html — LGPL or GPL depending on build configuration |
-| Pandoc | Document interchange | https://github.com/jgm/pandoc/blob/main/COPYRIGHT — GPL |
-| LibreOffice | Office rendering and conversion | https://www.libreoffice.org/about-us/licenses/ — MPL and component-specific terms |
-| 7-Zip | AES-encrypted ZIP and archive integrity | https://www.7-zip.org/license.txt — LGPL, BSD, and restrictions on unRAR components |
-| Apple frameworks / SF Symbols | Native platform functionality and interface symbols | Apple platform SDK and SF Symbols terms |
+| FFmpeg / FFprobe | Media encoding, filters and probing | LGPL 2.1 or later for Fileel's build configuration |
+| LAME | MP3 encoding | LGPL 2.0 or later |
+| libogg / libvorbis / Opus / libvpx / WebP | Audio and video codecs | BSD licenses and upstream notices |
+| libaom | AV1 encoding | BSD 2-Clause and upstream patent grants |
+| Pandoc | Document interchange | GPL 2.0 or later |
+| LibreOffice | Office rendering and conversion | MPL 2.0 and component-specific terms |
+| 7-Zip | Archives, encryption and integrity | LGPL, BSD and the unRAR restriction |
+| Ghostscript | PDF compression | AGPL 3.0 or later |
+| Sparkle | Signed app updates | MIT and component notices inside Sparkle.framework |
 
-Before distributing a bundled engine, record its exact version, build flags, included libraries, license texts, and corresponding source obligations. Do not assume the Homebrew FFmpeg build has the same license as an upstream minimal build
+Bundled license texts are in `Fileel.app/Contents/Resources/Engines/Notices`. LibreOffice also retains its original `LICENSE`, `LICENSE.html` and `NOTICE` files inside its own app bundle. The runtime source archive includes the exact pinned upstream sources and Fileel's build recipe; Fileel applies no source patches to these tools.
 
-The application icon and folded-ribbon mark are original vector geometry. System fonts are referenced through native APIs and are not redistributed
+Native functionality uses Apple's platform frameworks and SF Symbols under the applicable SDK terms. System fonts are referenced through native APIs and are not redistributed. The application icon and folded-ribbon mark are original vector geometry.
+
+Build-only DMG metadata tools, `ds_store` and `mac_alias`, are MIT licensed and pinned by version and checksum. They are not shipped as app dependencies.
