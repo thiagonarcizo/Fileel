@@ -44,7 +44,7 @@ final class MediaPreviewModel: ObservableObject {
             player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
             observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0 / 30, preferredTimescale: 600), queue: .main) { [weak self] time in
                 MainActor.assumeIsolated {
-                    guard let self else { return }
+                    guard let self, self.loadID == id else { return }
                     self.current = time.seconds
                     if let rangeEnd = self.rangeEnd, self.current >= rangeEnd { self.player.pause() }
                 }
@@ -52,7 +52,7 @@ final class MediaPreviewModel: ObservableObject {
             playbackObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
                 let playing = player.timeControlStatus == .playing
                 guard let model = self else { return }
-                Task { @MainActor in model.playing = playing }
+                Task { @MainActor in if model.loadID == id { model.playing = playing } }
             }
             ready = true
             error = nil
