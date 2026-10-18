@@ -63,6 +63,12 @@ final class NativeDocumentInputTests: XCTestCase {
         let epubFolder = folder.appendingPathComponent("epub")
         try ProcessRunner().run(URL(fileURLWithPath: "/usr/bin/ditto"), ["-x", "-k", epub.path, epubFolder.path])
         XCTAssertTrue(try packageContents(epubFolder).keys.contains { $0.hasSuffix(".png") }, "EPUB must include the attachment")
+        let markdown = try convert(source, format: "md")
+        XCTAssertTrue(try markdown.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true)
+        let markdownFile = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: markdown, includingPropertiesForKeys: nil).first { $0.pathExtension == "md" })
+        let markdownText = try String(contentsOf: markdownFile, encoding: .utf8)
+        XCTAssertTrue(markdownText.contains("!["), "rich text conversions must return the portable image folder")
+        XCTAssertFalse(markdownText.contains("<img"))
         XCTAssertEqual(try packageContents(source), before)
     }
 
