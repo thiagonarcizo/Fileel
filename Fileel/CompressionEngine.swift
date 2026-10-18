@@ -38,23 +38,30 @@ enum CompressionEngine {
         let original = try PDFCompressionEngine.byteCount(input)
         let target = Int64(Double(original) * (1 - options.compressionReduction / 100))
         let budget = try mediaBudget(input, reduction: options.compressionReduction, runner: runner)
-        let output = Catalog.canonical(input.pathExtension) == outputExtension(for: input) ? min(original, budget.estimatedBytes) : budget.estimatedBytes
+        let output = !options.changesMetadata && Catalog.canonical(input.pathExtension) == outputExtension(for: input) ? min(original, budget.estimatedBytes) : budget.estimatedBytes
         return Result(originalBytes: original, outputBytes: output, targetBytes: target)
     }
 
     @discardableResult
     static func compress(_ input: URL, output: URL, options: OperationOptions, runner: ProcessRunner) throws -> Result {
+        guard input.standardizedFileURL != output.standardizedFileURL else { throw FileelError.message("Choose a different output file.") }
         let reduction = options.compressionReduction
         guard reduction.isFinite, (0...95).contains(reduction) else { throw FileelError.message("Choose a reduction from 0% to 95%.") }
         let family = FileFamily.detect(input)
-        if family == .pdf { return try PDFCompressionEngine.compress(input, output: output, reduction: reduction, runner: runner) }
+        if family == .pdf { return try PDFCompressionEngine.compress(input, output: output, reduction: reduction, runner: runner, options: options) }
+        guard family == .image || family == .video || family == .audio else { throw FileelError.message("Compression is unavailable for this file type.") }
         let originalBytes = try PDFCompressionEngine.byteCount(input)
         let target = Int64(Double(originalBytes) * (1 - reduction / 100))
         let workspace = output.deletingLastPathComponent().appendingPathComponent("compression-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: workspace) }
         let sameFormat = Catalog.canonical(input.pathExtension) == Catalog.canonical(output.pathExtension)
-        var best: (url: URL, bytes: Int64)? = sameFormat ? (input, originalBytes) : nil
+        if sameFormat, reduction == 0, !options.changesMetadata {
+            try runner.checkCancellation()
+            try FileManager.default.copyItem(at: input, to: output)
+            return Result(originalBytes: originalBytes, outputBytes: originalBytes, targetBytes: target)
+        }
+        var best: (url: URL, bytes: Int64)? = sameFormat && !options.changesMetadata ? (input, originalBytes) : nil
         var meeting: (url: URL, bytes: Int64)?
         var attempt = 0
 
@@ -65,7 +72,31 @@ enum CompressionEngine {
             return bytes
         }
 
+        // remux a privacy-safe fallback without decoding the original audio or video packets
+        if sameFormat, options.changesMetadata, family == .video || family == .audio {
+            let sanitized = workspace.appendingPathComponent("metadata.\(output.pathExtension)")
+            try MediaEngine.process(input, tool: .metadata, output: sanitized, options: options, runner: runner)
+            _ = try record(sanitized)
+            if reduction == 0 || (best?.bytes ?? Int64.max) <= target {
+                try runner.checkCancellation()
+                try FileManager.default.copyItem(at: sanitized, to: output)
+                return Result(originalBytes: originalBytes, outputBytes: try PDFCompressionEngine.byteCount(output), targetBytes: target)
+            }
+        }
+
         if family == .image {
+            if sameFormat, options.stripMetadata || !options.preserveMetadata,
+               [options.author, options.title, options.cameraMake, options.cameraModel, options.lensModel, options.latitude, options.longitude].allSatisfy({ $0.isEmpty }) {
+                let sanitized = workspace.appendingPathComponent("metadata.\(output.pathExtension)")
+                if ImageEngine.copyWithoutMetadata(input, to: sanitized) {
+                    let bytes = try record(sanitized)
+                    if reduction == 0 || bytes <= target {
+                        try runner.checkCancellation()
+                        try FileManager.default.copyItem(at: sanitized, to: output)
+                        return Result(originalBytes: originalBytes, outputBytes: bytes, targetBytes: target)
+                    }
+                }
+            }
             let image = try ImageEngine.load(input)
             func candidate(_ quality: Double) throws -> Int64 {
                 try runner.checkCancellation()

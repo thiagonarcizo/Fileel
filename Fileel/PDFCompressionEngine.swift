@@ -16,7 +16,7 @@ enum PDFCompressionEngine {
     }
 
     @discardableResult
-    static func compress(_ input: URL, output: URL, reduction: Double, runner: ProcessRunner) throws -> Result {
+    static func compress(_ input: URL, output: URL, reduction: Double, runner: ProcessRunner, options: OperationOptions = OperationOptions()) throws -> Result {
         guard input.standardizedFileURL != output.standardizedFileURL else { throw FileelError.message("Choose a different output file.") }
         guard reduction.isFinite, (0...95).contains(reduction) else { throw FileelError.message("Choose a reduction from 0% to 95%.") }
         let original = try byteCount(input)
@@ -24,7 +24,14 @@ enum PDFCompressionEngine {
         let workspace = output.deletingLastPathComponent().appendingPathComponent("pdf-compression-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: workspace) }
-        var smallest = (url: input, bytes: original)
+        var source = input
+        if options.changesMetadata {
+            let document = try PDFEngine.load(input)
+            let sanitized = try PDFEngine.updatingMetadata(document, options: options, runner: runner)
+            source = workspace.appendingPathComponent("metadata.pdf")
+            guard sanitized.write(to: source) else { throw FileelError.message("The PDF metadata could not be updated.") }
+        }
+        var smallest = (url: source, bytes: try byteCount(source))
         var meeting: (url: URL, bytes: Int64)?
         let pageCount = try PDFEngine.load(input).pageCount
         var attempt = 0
@@ -42,7 +49,7 @@ enum PDFCompressionEngine {
                         "-dDownsampleGrayImages=true", "-dGrayImageDownsampleType=/Bicubic", "-dGrayImageResolution=\(dpi)",
                         "-dDownsampleMonoImages=true", "-dMonoImageResolution=\(max(150, dpi * 2))",
                         "-dAutoFilterColorImages=false", "-dColorImageFilter=/DCTEncode", "-dAutoFilterGrayImages=false", "-dGrayImageFilter=/DCTEncode",
-                        "-dPassThroughJPEGImages=false", "-sOutputFile=\(path.path)", "-c", parameters, "-f", input.path]
+                        "-dPassThroughJPEGImages=false", "-sOutputFile=\(path.path)", "-c", parameters, "-f", source.path]
             try runner.run(Engines.require("gs"), args)
             try runner.checkCancellation()
             guard try PDFEngine.load(path).pageCount == pageCount else { throw FileelError.message("Compression changed the number of pages.") }
