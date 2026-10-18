@@ -12,7 +12,7 @@ The `Release` workflow runs after every push or merged pull request to `main` or
 1. Run the native build, engine tests, release-tool tests, secret scan and Swift CodeQL analysis
 2. Check the environment's first-release acceptance gate
 3. Import the expected Developer ID certificate into an ephemeral runner keychain
-4. Archive the exact source commit with a build number shared across both channels
+4. Archive the exact source commit with a build number shared across both channels, then sign Sparkle's nested helpers, framework and enclosing app from the inside out
 5. Require bundled conversion engines and the expected Sparkle public key
 6. Submit the app to Apple, require `Accepted`, staple and validate its ticket
 7. Create and sign the DMG, notarize it, staple it and verify its structure

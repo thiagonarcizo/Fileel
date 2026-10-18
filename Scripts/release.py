@@ -221,11 +221,12 @@ def build_release():
                  f"FILEEL_UPDATE_CHANNEL={plan['channel']}",
                  "OTHER_CODE_SIGN_FLAGS=--timestamp"])
             app = archive / "Products/Applications/Fileel.app"
+            run(["bash", ROOT / "Scripts/sign-app.sh", app, IDENTITY])
             with (app / "Contents/Info.plist").open("rb") as stream:
                 info = plistlib.load(stream)
             verify_app_info(info, plan)
             # a public download must contain the engines promised by the app, not rely on homebrew
-            manifest = app / "Contents/Resources/engines/manifest.json"
+            manifest = app / "Contents/Resources/Engines/manifest.json"
             if not manifest.is_file():
                 raise ValueError("bundled conversion engines are missing; refusing an incomplete public release")
             run(["codesign", "--verify", "--deep", "--strict", app])

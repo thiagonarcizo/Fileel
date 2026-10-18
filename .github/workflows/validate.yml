@@ -17,7 +17,7 @@ concurrency:
 jobs:
   native:
     name: Native build and engine tests
-    runs-on: xcode-27
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,7 +70,8 @@ jobs:
 
   codeql:
     name: CodeQL Swift
-    runs-on: xcode-27
+    # codeql's compiled-language tracing needs rosetta on arm hosts, so use an intel runner for analysis
+    runs-on: macos-26-intel
     timeout-minutes: 30
     permissions:
       contents: read
@@ -83,6 +84,7 @@ jobs:
         with:
           languages: swift
           build-mode: manual
+          queries: security-and-quality
       - name: Build for analysis
         run: |
           xcodebuild build -project Fileel.xcodeproj -scheme Fileel \
