@@ -144,6 +144,24 @@ final class PDFFeatureTests: XCTestCase {
                                                         checkCancellation: { try runner.checkCancellation() }))
     }
 
+    func testRasterExportKeepsPageRotationAndArtwork() throws {
+        let document = try PDFEngine.load(fixture())
+        let page = try XCTUnwrap(document.page(at: 0))
+        for angle in [0, 90, 180, 270] {
+            page.rotation = angle
+            let expected = try raster(page)
+            let result = try PDFEngine.render(page, dpi: 72)
+            XCTAssertEqual(result.width, expected.width); XCTAssertEqual(result.height, expected.height)
+            let first = Array(try XCTUnwrap(expected.dataProvider?.data) as Data)
+            let second = Array(try XCTUnwrap(result.dataProvider?.data) as Data)
+            let difference = zip(first, second).reduce(0.0) { $0 + abs(Double($1.0) - Double($1.1)) } / Double(first.count)
+            XCTAssertLessThan(difference, 1, "rotated artwork must remain in place")
+        }
+        XCTAssertThrowsError(try PDFEngine.render(page, dpi: .nan))
+        XCTAssertThrowsError(try PDFEngine.render(page, dpi: .infinity))
+        XCTAssertThrowsError(try PDFEngine.render(page, dpi: 1e12))
+    }
+
     func testPDFCompressionReportsRealSizeAndKeepsSelectableText() throws {
         guard Engines.locate("gs") != nil else { throw XCTSkip("Ghostscript is required") }
         let input = try fixture(photograph: true)

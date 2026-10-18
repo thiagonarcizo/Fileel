@@ -15,8 +15,37 @@ enum DocumentEngine {
                 return pages
             }
             if format == "pptx" {
-                try OfficePackage.slides(from: input, output: output, runner: runner)
+                do {
+                    try office(input, format: format, output: output, runner: runner, inputFilter: "impress_pdf_import")
+                } catch is CancellationError { throw CancellationError() }
+                catch {
+                    // keep the page-image fallback for PDFs the editable import filter cannot open
+                    try? FileManager.default.removeItem(at: output)
+                    try OfficePackage.slides(from: input, output: output, runner: runner)
+                }
                 return output
+            }
+            if ["docx", "pages"].contains(format) {
+                let document = try PDFEngine.load(input)
+                let hasTextOnEveryPage = document.pageCount > 0 && (0..<document.pageCount).allSatisfy {
+                    !(document.page(at: $0)?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                }
+                if hasTextOnEveryPage {
+                    let editable = format == "docx" ? output : folder.appendingPathComponent("pdf-layout.docx")
+                    var imported = false
+                    do {
+                        try office(input, format: "docx", output: editable, runner: runner, inputFilter: "writer_pdf_import")
+                        imported = true
+                    } catch is CancellationError { throw CancellationError() }
+                    catch {
+                        // fall back to text extraction if the layout importer cannot handle this PDF
+                        try? FileManager.default.removeItem(at: editable)
+                    }
+                    if imported {
+                        if format == "pages" { try pages(editable, output: output) }
+                        return output
+                    }
+                }
             }
             let text = try PDFEngine.text(input, runner: runner)
             if format == "xlsx" {
@@ -80,23 +109,30 @@ enum DocumentEngine {
     }
 
     static func pandoc(_ input: URL, output: URL, runner: ProcessRunner) throws {
-        var args = [input.path, "--standalone", "--output", output.path]
+        let reflow = output.deletingLastPathComponent().appendingPathComponent("reflow-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: reflow) }
+        let readable = try DocxTextBoxes.normalized(input, workspace: reflow, runner: runner)
+        var args = [readable.path, "--standalone", "--output", output.path]
         let ext = input.pathExtension.lowercased()
         if ext == "txt" { args += ["--from", "markdown"] }
         if output.pathExtension == "txt" { args += ["--to", "plain"] }
         if output.pathExtension == "md" { args += ["--to", "gfm"] }
+        if output.pathExtension == "html" { args += ["--embed-resources"] }
         // resource paths stay local and no conversion calls a remote service
         args += ["--resource-path", input.deletingLastPathComponent().path]
         try runner.run(Engines.require("pandoc"), args)
     }
 
-    static func office(_ input: URL, format: String, output: URL, runner: ProcessRunner) throws {
+    static func office(_ input: URL, format: String, output: URL, runner: ProcessRunner, inputFilter: String? = nil) throws {
         let temp = output.deletingLastPathComponent().appendingPathComponent("office-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temp) }
         let profile = temp.appendingPathComponent("profile")
         let filter = format == "tsv" ? "csv:Text - txt - csv (StarCalc):9,34,76,1" : format
-        try runner.run(Engines.require("soffice"), ["-env:UserInstallation=\(profile.absoluteString)", "--headless", "--convert-to", filter, "--outdir", temp.path, input.path])
+        var arguments = ["-env:UserInstallation=\(profile.absoluteString)", "--headless"]
+        if let inputFilter { arguments.append("--infilter=\(inputFilter)") }
+        arguments += ["--convert-to", filter, "--outdir", temp.path, input.path]
+        try runner.run(Engines.require("soffice"), arguments)
         let ext = format == "tsv" ? "csv" : format
         let result = temp.appendingPathComponent(input.deletingPathExtension().lastPathComponent + "." + ext)
         guard FileManager.default.fileExists(atPath: result.path) else {
@@ -163,6 +199,11 @@ enum OfficePackage {
 
     static func slides(from input: URL, output: URL, runner: ProcessRunner) throws {
         let pdf = try PDFEngine.load(input)
+        guard let first = pdf.page(at: 0) else { throw FileelError.message("This PDF has no pages.") }
+        let firstBounds = try PDFEngine.displayedBounds(first)
+        let longest = max(firstBounds.width, firstBounds.height)
+        let slideWidth = max(1, Int(firstBounds.width / longest * 9_144_000))
+        let slideHeight = max(1, Int(firstBounds.height / longest * 9_144_000))
         let root = output.deletingLastPathComponent().appendingPathComponent("pptx-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         var overrides = "", ids = "", relationships = ""
@@ -173,13 +214,18 @@ enum OfficePackage {
             relationships += "<Relationship Id=\"rId\(index)\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide\" Target=\"slides/slide\(index).xml\"/>"
             let media = root.appendingPathComponent("ppt/media/page\(index).png")
             try FileManager.default.createDirectory(at: media.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try ImageEngine.write(PDFEngine.render(pdf.page(at: index - 1)!, dpi: 144), to: media, options: .init())
-            try xml("<p:sld xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:pic><p:nvPicPr><p:cNvPr id=\"2\" name=\"PDF page \(index)\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"rId1\"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"9144000\" cy=\"6858000\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:spTree></p:cSld></p:sld>", at: "ppt/slides/slide\(index).xml", root: root)
+            let image = try PDFEngine.render(pdf.page(at: index - 1)!, dpi: 144)
+            try ImageEngine.write(image, to: media, options: .init())
+            // mixed page sizes fit inside one slide canvas without stretching their content
+            let fit = min(Double(slideWidth) / Double(image.width), Double(slideHeight) / Double(image.height))
+            let width = Int(Double(image.width) * fit), height = Int(Double(image.height) * fit)
+            let x = (slideWidth - width) / 2, y = (slideHeight - height) / 2
+            try xml("<p:sld xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:pic><p:nvPicPr><p:cNvPr id=\"2\" name=\"PDF page \(index)\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"rId1\"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x=\"\(x)\" y=\"\(y)\"/><a:ext cx=\"\(width)\" cy=\"\(height)\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:spTree></p:cSld></p:sld>", at: "ppt/slides/slide\(index).xml", root: root)
             try xml("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/page\(index).png\"/></Relationships>", at: "ppt/slides/_rels/slide\(index).xml.rels", root: root)
         }
         try xml("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"png\" ContentType=\"image/png\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/ppt/presentation.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml\"/>\(overrides)</Types>", at: "[Content_Types].xml", root: root)
         try xml("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"ppt/presentation.xml\"/></Relationships>", at: "_rels/.rels", root: root)
-        try xml("<p:presentation xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"><p:sldIdLst>\(ids)</p:sldIdLst><p:sldSz cx=\"9144000\" cy=\"6858000\"/><p:notesSz cx=\"6858000\" cy=\"9144000\"/></p:presentation>", at: "ppt/presentation.xml", root: root)
+        try xml("<p:presentation xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"><p:sldIdLst>\(ids)</p:sldIdLst><p:sldSz cx=\"\(slideWidth)\" cy=\"\(slideHeight)\"/><p:notesSz cx=\"6858000\" cy=\"9144000\"/></p:presentation>", at: "ppt/presentation.xml", root: root)
         try xml("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\(relationships)</Relationships>", at: "ppt/_rels/presentation.xml.rels", root: root)
         try pack(root, output: output, runner: runner)
     }
