@@ -158,18 +158,7 @@ enum MediaEngine {
     }
 
     static func join(_ inputs: [URL], output: URL, options: OperationOptions, runner: ProcessRunner) throws {
-        // normalize clips before concatenation so mixed codecs and dimensions can be joined
-        var normalized: [URL] = []
-        for (index, input) in inputs.enumerated() {
-            let clip = output.deletingLastPathComponent().appendingPathComponent("join-\(index).mp4")
-            try encode(input, output: clip, options: options, runner: runner,
-                       filters: ["scale=1280:720:force_original_aspect_ratio=decrease", "pad=1280:720:(ow-iw)/2:(oh-ih)/2", "setsar=1", "fps=30"],
-                       extra: ["-ar", "48000", "-ac", "2"])
-            normalized.append(clip)
-        }
-        let list = output.deletingLastPathComponent().appendingPathComponent("clips.txt")
-        try normalized.map { "file '\($0.lastPathComponent)'" }.joined(separator: "\n").write(to: list, atomically: true, encoding: .utf8)
-        try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-f", "concat", "-safe", "1", "-i", list.path, "-c", "copy", output.path])
+        try VideoJoinEngine.join(inputs, output: output, options: options, runner: runner)
     }
 
     static func joinAudio(_ inputs: [URL], output: URL, options: OperationOptions, runner: ProcessRunner) throws {
