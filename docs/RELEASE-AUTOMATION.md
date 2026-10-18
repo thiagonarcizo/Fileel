@@ -46,6 +46,8 @@ Each environment has `FILEEL_RELEASE_READY=false` until the actual installed-app
 
 A manual `Release` run defaults to verification only. On the reviewed `main` or `dev` branch, it builds, signs and notarizes the complete app and DMG using that branch's protected environment. It uploads a temporary private draft, downloads every asset to verify hashes and the update signature, then removes only that run's uniquely named draft/tag. It never changes either appcast. This can validate credentials and delivery before enabling the public-release gate; it does not replace an installed-app update test. Set the manual `publish_update` input only when a public release is intended and its gate is already enabled
 
+While the public gate is off, pushes to the reviewed branches run the same private delivery verification automatically. This exercises the real signing/notarization/upload path before the first public download, rather than treating an intentionally skipped build as acceptance. Enabling the gate changes subsequent pushes to public delivery; an explicit manual publication request with the gate off still fails closed
+
 The owner reviews and merges a pull request to release it. Environment branch restrictions allow `production` only from `main`, and `beta` only from `dev`. This avoids requiring a second manual deployment approval after an already-authorized merge
 
 ## Installed apps
@@ -55,3 +57,5 @@ Automatic checks run approximately hourly while Fileel is running. Sparkle prese
 Switching to beta selects its feed. Switching back selects stable immediately and keeps the currently installed version until a newer stable build exists. Sparkle prevents downgrades; Fileel preserves the same bundle identity and settings across channels, and About continues to identify the actual installed beta until a stable update is installed
 
 Before the first public download, test an older installed release updating to a newer one, invalid-signature rejection, preferences, launch behavior and both channel transitions. Validate the actual public feed and downloaded release, rather than assuming a successful build proves update installation
+
+Every distribution build now runs `Scripts/test-installed-updates.py` with a dedicated `xyz.narcizo.Fileel.UpdateSmoke` app identity. It signs and notarizes four fixture versions, serves signed feeds over loopback, rejects an altered DMG, installs and relaunches a newer stable app, checks beta through the background-update path, rejects a downgrade after opting out, and returns to a newer stable build. It verifies a saved preference marker throughout. The fixture compiles the same `UpdateChannel.swift` migration code as Fileel. It uses a headless test driver, so the production updater's visual interaction still needs separate acceptance

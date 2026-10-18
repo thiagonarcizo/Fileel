@@ -94,6 +94,7 @@ struct MediaPreviewView: View {
     let operation: FileOperation?
     @Binding var options: OperationOptions
     @StateObject private var media = MediaPreviewModel()
+    @ObservedObject private var jobs = AppModel.shared
     var onPosition: (Double) -> Void = { _ in }
     var onDuration: (Double) -> Void = { _ in }
     var onVideoSize: (CGSize) -> Void = { _ in }
@@ -159,6 +160,7 @@ struct MediaPreviewView: View {
             }
         }
         .task(id: url) { await media.load(url) }
+        .onChange(of: jobs.busy) { _, busy in if busy { media.player.pause() } }
         .onChange(of: media.duration) { _, duration in
             onDuration(duration)
             if duration > 0, editsRange { options.start = 0; options.end = duration; media.rangeEnd = duration }
