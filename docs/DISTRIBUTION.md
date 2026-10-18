@@ -23,6 +23,13 @@ This flow uses the existing Xcode session and does not require storing an app-sp
 
 Run the packaging script with the app exported after notarization:
 
+First prepare the pinned layout tooling in an isolated environment:
+
+```sh
+python3 -m venv build/dmg-tools
+build/dmg-tools/bin/python3 -m pip install --require-hashes --only-binary=:all: -r Distribution/dmg-requirements.txt
+```
+
 ```sh
 bash Scripts/create-dmg.sh \
   build/distribution/notarized/Fileel.app \
@@ -35,7 +42,9 @@ The notarization ticket is attached to the enclosed app. The script does not sub
 
 ## Remaining release requirements
 
-External conversion engines are currently discovered locally and are not bundled. A DMG containing Fileel alone therefore does not provide every conversion on a clean Mac. Complete dependency packaging with exact versions, license notices and applicable source obligations, or clearly label a preview with its external requirements
+Release builds embed the payload prepared by `Scripts/build-runtimes.py`, including the reviewed engine versions and their notices. Development builds may discover locally installed tools. Never package a development app without the runtime manifest as a complete release. See [runtime distribution](RUNTIME-DISTRIBUTION.md) for the source archive and compatibility checks
+
+The installer uses an original background, explicit Finder icon positions and an Applications shortcut. Set `FILEEL_RELEASE_CHANNEL=beta` for the distinct beta volume name, badge and footer. Its `.DS_Store` is generated directly; building it does not automate Finder or alter the user's view preferences
 
 Check [coverage](COVERAGE.md), native drag behavior, onboarding, file permissions, and the installed app before publishing. Keep signing and notarization logs outside the public repository
 

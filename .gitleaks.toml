@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+# this exact ed25519 public key is shipped for verification and grants no signing access
+[[allowlists]]
+description = "fileel public update verification key"
+regexTarget = "secret"
+regexes = ['''^nMA9rtIbe4Be4GX9EsRMc9w6iHfiNVcVa0JXb\+\+TIAc=$''']

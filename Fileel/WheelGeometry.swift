@@ -12,9 +12,28 @@ struct WheelGeometry {
         let inner: Double
         let outer: Double
         var radius: Double { (inner + outer) / 2 }
-        var labelWidth: Double { if sweep >= 180 { return 106 }; return min(outer < 140 ? 74 : 106, 2 * radius * sin(sweep * .pi / 360) - 18) }
-        var iconSize: Double { outer - inner > 90 ? 26 : outer < 140 ? 19 : 22 }
-        var labelSize: Double { outer < 140 ? 10.5 : 12 }
+        var labelHeight: Double { outer < 140 ? 44 : 48 }
+        var labelWidth: Double {
+            // fit all four label corners inside the annular sector, including side-facing slices
+            let maximum = outer < 140 ? 74.0 : 106.0
+            var low = 0.0, high = maximum
+            for _ in 0..<14 {
+                let width = (low + high) / 2
+                let fits = [-1.0, 1.0].allSatisfy { x in
+                    [-1.0, 1.0].allSatisfy { y in
+                        let px = radius * cos(angle * .pi / 180) + x * width / 2
+                        let py = radius * sin(angle * .pi / 180) + y * labelHeight / 2
+                        let r = hypot(px, py)
+                        let delta = abs((atan2(py, px) * 180 / .pi - angle + 540).truncatingRemainder(dividingBy: 360) - 180)
+                        return r >= inner + 6 && r <= outer - 6 && delta <= sweep / 2 - WheelGeometry.angularInset - 2
+                    }
+                }
+                if fits { low = width } else { high = width }
+            }
+            return max(24, low)
+        }
+        var iconSize: Double { outer - inner > 90 ? 24 : outer < 140 ? 18 : 20 }
+        var labelSize: Double { outer < 140 ? 10 : 11 }
     }
     let items: [Item]
 

@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+    inputs:
+      publish_update:
+        description: Publish a public release and advance its update feed
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# keep each channel's pending release separate while its active publication finishes
+concurrency:
+  group: fileel-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
+    permissions:
+      contents: read
+      security-events: write
+
+  distribute:
+    name: Sign, notarize and publish
+    needs: validate
+    if: github.repository == 'thiagonarcizo/Fileel' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
+    runs-on: macos-26
+    timeout-minutes: 120
+    environment: ${{ github.ref_name == 'main' && 'production' || 'beta' }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check explicit publication requests
+        if: inputs.publish_update
+        env:
+          RELEASE_READY: ${{ vars.FILEEL_RELEASE_READY }}
+        run: |
+          if [[ "$RELEASE_READY" != true ]]; then
+            echo '::error::Publication is locked until installed-app update tests and clean-Mac acceptance pass'
+            exit 1
+          fi
+      - name: Plan this channel's release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 Scripts/release.py plan
+      - name: Prepare conversion engines without signing credentials
+        if: steps.plan.outputs.current == 'true'
+        run: |
+          brew install cmake ninja pkgconf
+          python3 Scripts/build-runtimes.py
+          python3 Scripts/verify-runtimes.py build/runtime/payload
+          rm -rf build/runtime/sources build/runtime/cmake build/runtime/prefix build/runtime/aom-source build/runtime/downloads build/runtime/completed
+          python3 -m venv build/dmg-tools
+          build/dmg-tools/bin/python3 -m pip install --require-hashes --only-binary=:all: -r Distribution/dmg-requirements.txt
+      - name: Test the prepared conversion engines
+        if: steps.plan.outputs.current == 'true'
+        run: |
+          FILEEL_FFMPEG="$PWD/build/runtime/payload/MacOS/ffmpeg" \
+          FILEEL_FFPROBE="$PWD/build/runtime/payload/MacOS/ffprobe" \
+          FILEEL_GS="$PWD/build/runtime/payload/MacOS/gs" \
+          FILEEL_PANDOC="$PWD/build/runtime/payload/MacOS/pandoc" \
+          FILEEL_7ZZ="$PWD/build/runtime/payload/MacOS/7zz" \
+          FILEEL_SOFFICE="$PWD/build/runtime/payload/Helpers/LibreOffice.app/Contents/MacOS/soffice" swift test
+          python3 Scripts/verify-runtimes.py build/runtime/payload
+      - name: Sign, notarize and package
+        if: steps.plan.outputs.current == 'true'
+        env:
+          FILEEL_CERTIFICATE_P12: ${{ secrets.FILEEL_CERTIFICATE_P12 }}
+          FILEEL_CERTIFICATE_PASSWORD: ${{ secrets.FILEEL_CERTIFICATE_PASSWORD }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
+        run: python3 Scripts/release.py build
+      - name: Publish verified downloads and update feed
+        if: steps.plan.outputs.current == 'true' && ((github.event_name == 'push' && vars.FILEEL_RELEASE_READY == 'true') || inputs.publish_update)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
+          FILEEL_RELEASE_READY: ${{ vars.FILEEL_RELEASE_READY }}
+        run: python3 Scripts/release.py publish
+      - name: Verify a private draft upload and remove it
+        if: steps.plan.outputs.current == 'true' && ((github.event_name == 'workflow_dispatch' && !inputs.publish_update) || (github.event_name == 'push' && vars.FILEEL_RELEASE_READY != 'true'))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILEEL_SPARKLE_PRIVATE_KEY: ${{ secrets.FILEEL_SPARKLE_PRIVATE_KEY }}
+        run: python3 Scripts/release.py rehearse

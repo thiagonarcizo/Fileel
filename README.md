@@ -1,14 +1,79 @@
-# Fileel
+<p align="center">
+  <img src="docs/brand/cover.svg" alt="Fileel — your files, one gesture away" width="100%">
+</p>
 
-Native file conversion and tools for Apple Silicon Macs, built with SwiftUI and AppKit
+<p align="center">
+  <strong>A little less switching apps. A little more getting things done.</strong><br>
+  A native, open source file utility for Apple silicon Macs
+</p>
 
-**Status: development build, not a published v0 release**
+<p align="center">
+  <a href="https://github.com/thiagonarcizo/Fileel/releases">Releases</a> ·
+  <a href="#one-drag-three-shortcuts">How it works</a> ·
+  <a href="#made-for-your-mac">Features</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a> ·
+  <a href="https://github.com/thiagonarcizo/Fileel/issues">Feedback</a>
+</p>
 
-Drag files in Finder, press **Shift** for conversions, **Command** for tools, or **Control** for actions, then drop on an option. Release the modifier to keep the menu open; drop in the center or press Escape to cancel. The main window provides an alternative using standard controls
+> **The first public release is being prepared.** Downloads will appear in [GitHub Releases](https://github.com/thiagonarcizo/Fileel/releases) after installation and update testing is complete.
 
-## Build
+## One drag. Three shortcuts.
 
-Building requires Xcode 26 or newer for the Liquid Glass APIs and Icon Composer asset. The app runs on macOS 14 or newer, with native material fallbacks on older systems. The app target is restricted to `arm64`
+Pick up a file in Finder and hold a key. Fileel brings the next action to your pointer.
+
+| Hold | Choose | Make it happen |
+| :---: | --- | --- |
+| **⇧ Shift** | Convert | Pick a new format for your files |
+| **⌘ Command** | Tools | Crop a photo, trim a clip, annotate, compress or organize a PDF |
+| **⌃ Control** | Actions | Keep files floating nearby, copy a path, rename and more |
+
+Drop onto an option to continue. Click the center or press **Esc** to close. Shortcuts can be reassigned in Settings.
+
+## Made for your Mac
+
+**A quiet place in the menu bar.** Fileel stays close when you need it, with no Dock icon. Its interface follows your Mac's accent color and appearance.
+
+**Tools with room to work.** Photos, video and PDFs open in editors designed for the task. Drag crop handles, draw an arrow directly on an image, or reorder PDF pages by moving their thumbnails.
+
+**See the size before you compress.** Choose a reduction for photos, PDFs and video before saving. Video sizes are estimates; image and PDF previews measure generated copies. Some files have less room to shrink than others.
+
+**Keep the original.** Editing and conversion save new copies. Copy an edited image straight to the clipboard, or extract text from a photo without creating another file.
+
+**A little tactile feedback.** Feel each selection on a compatible trackpad. Haptics and selection sounds have separate settings; sounds start off.
+
+**Files that stay within reach.** A single floating shelf holds the files you add. Move it wherever it fits, then drag a file back into your workflow.
+
+## A useful set of tools
+
+| Files | A few things you can do |
+| --- | --- |
+| **Photos** | Convert, resize, crop, auto-adjust, annotate, redact, extract text, remove backgrounds and make collages |
+| **Video** | Convert, trim, crop, resize, rotate, compress and work with audio or subtitles |
+| **Audio** | Convert, trim, normalize, fade, change channels and remove silence |
+| **PDFs** | Merge, split, reorder, rotate, duplicate pages, watermark, protect and compress |
+| **Documents & spreadsheets** | Convert common formats and work with text or tables |
+| **Archives & subtitles** | Extract, convert, verify archives and adjust subtitle formats or timing |
+
+Conversion tools are packaged with release builds. File processing runs locally. Creating Apple Pages files additionally requires Pages and the macOS automation permission.
+
+See the [format and acceptance checklist](docs/COVERAGE.md) for the detailed scope and current limitations, including document layout fidelity.
+
+## Install and stay up to date
+
+Fileel targets **Apple silicon** and **macOS 14 or later**. Native Liquid Glass is available on macOS 26 and later, with native materials on earlier systems.
+
+Once available, open the DMG from [Releases](https://github.com/thiagonarcizo/Fileel/releases), drag Fileel into Applications, and launch it. Permission guidance appears during onboarding.
+
+Fileel includes **Check for Updates** and automatic update checks. Stable and beta have separate update feeds; choose a channel in Settings → About. Leaving beta stops beta updates immediately and keeps your current installation until a newer stable build is available. Your preferences stay with you.
+
+## Open source, built together
+
+Fileel's source is available under the [MIT license](LICENSE). Ideas, bug reports and thoughtful contributions are welcome. Start with the [contributor guide](CONTRIBUTING.md) or [open an issue](https://github.com/thiagonarcizo/Fileel/issues/new).
+
+<details>
+<summary><strong>Build Fileel yourself</strong></summary>
+
+Use Xcode 26 or newer on an Apple silicon Mac:
 
 ```sh
 xcodebuild build -project Fileel.xcodeproj -scheme Fileel \
@@ -16,52 +81,17 @@ xcodebuild build -project Fileel.xcodeproj -scheme Fileel \
   -derivedDataPath build CODE_SIGNING_ALLOWED=NO
 ```
 
-The output is `build/Build/Products/Debug/Fileel.app`
-
-## Local engines
-
-Native image and PDF operations use ImageIO, Core Image, PDFKit, and Vision. Additional operations discover these local executables:
+The development app is at `build/Build/Products/Debug/Fileel.app`. Development builds can discover local conversion tools; full distribution builds package the pinned runtimes described in the [runtime build guide](docs/RUNTIME-DISTRIBUTION.md).
 
 ```sh
-brew install ffmpeg pandoc sevenzip
+brew install ffmpeg-full pandoc sevenzip ghostscript
 brew install --cask libreoffice
-```
-
-Pages export also requires Apple Pages and the system's automation permission, requested only when creating a Pages document
-
-Search order: `Fileel.app/Contents/Resources/Engines`, a `FILEEL_<ENGINE>` environment override, the standard application location for LibreOffice, Homebrew, and `/usr/bin`. Engines are **not bundled yet**; installing this development app alone does not install its conversion dependencies
-
-## Features and verification
-
-See [the coverage checklist](docs/COVERAGE.md) for the implementation scope and fidelity limits. A catalog entry is not evidence that a conversion has been validated on every input variation
-
-```sh
 swift test
+python3 -m unittest discover -s Tests/Release -v
 ```
 
-The tests generate their own files in temporary folders. Backend integration tests skip when the corresponding engine is unavailable
+Backend tests create temporary fixtures. Tests requiring an unavailable external tool report a skip; CI installs the complete tool set.
 
-## Design
+See [release automation](docs/RELEASE-AUTOMATION.md) for signing, notarization, protected branches and update publication. Bundled components retain their [upstream licenses and notices](THIRD_PARTY_NOTICES.md).
 
-The folded-ribbon identity is original. Fileel lives in the menu bar and does not show a Dock icon. Its layered Icon Composer asset supports the system's icon appearances; the menu bar uses a template symbol. Interface text uses the macOS system font; the welcome heading uses the system serif design. Interactive accents inherit the current macOS accent color. The app does not declare a fixed accent color or force an appearance
-
-Haptics are enabled by default and require a compatible trackpad. Selection sounds are disabled by default. Both can be changed independently in Settings
-
-## Distribution
-
-The intended distribution channel is GitHub Releases. This repository contains development packaging instructions, not a published release. A release requires dependency and license packaging, Developer ID signing, notarization, and completion of the acceptance checklist
-
-The signing and DMG workflow is documented in [distribution](docs/DISTRIBUTION.md). The packaging script requires an already notarized app and refuses to overwrite an existing disk image
-
-Fileel is an independent implementation inspired by a file utility workflow. It does not include Tangerine's code, branding, assets, sounds, or implementation details
-
-## License
-
-Fileel's own source is licensed under MIT. Third-party engines have separate licenses; see [third-party notices](THIRD_PARTY_NOTICES.md)
-
-Regenerate icon assets from their shared drawing source:
-
-```sh
-swiftc Fileel/IconArtwork.swift Scripts/RenderIcon.swift -o /tmp/fileel-render-icon
-/tmp/fileel-render-icon Fileel/Assets.xcassets/AppIcon.appiconset docs/brand
-```
+</details>

@@ -89,6 +89,11 @@ enum ConversionEngine {
     static func process(_ input: URL, tool: FileTool, folder: URL, options: OperationOptions, runner: ProcessRunner) throws -> URL {
         let family = FileFamily.detect(input)
         let stem = input.deletingPathExtension().lastPathComponent
+        if tool == .compress {
+            let output = folder.appendingPathComponent("\(stem) Compressed.\(CompressionEngine.outputExtension(for: input))")
+            try CompressionEngine.compress(input, output: output, options: options, runner: runner)
+            return output
+        }
         if tool == .extract {
             let output = folder.appendingPathComponent("\(stem) Extracted")
             try ArchiveEngine.extract(input, folder: output, runner: runner)

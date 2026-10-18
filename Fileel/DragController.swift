@@ -37,7 +37,7 @@ final class DragController {
             idlePasteboardCount = pasteboard.changeCount
             candidate = false
             cancelled = false
-            // defer dismissal so appkit can deliver performDragOperation after mouse-up
+            // defer dismissal so appkit can deliver the drop after mouse-up
             if wasPressed { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.dismiss() } }
             return
         }
@@ -45,9 +45,9 @@ final class DragController {
         let distance = hypot(NSEvent.mouseLocation.x - downPoint.x, NSEvent.mouseLocation.y - downPoint.y)
         if pasteboard.changeCount != idlePasteboardCount && distance > 4 { candidate = true }
         guard candidate, !cancelled else { return }
-        // Escape is read only during an active drag and never consumed from another app
+        // escape is read only during an active drag and never consumed from another app
         if CGEventSource.keyState(.combinedSessionState, key: 53) { cancelled = true; dismiss(); return }
-        guard let mode = selectedMode(flags: flags, previous: lastFlags) else { return }
+        guard let mode = Self.selectedMode(flags: flags, previous: lastFlags, hasMenu: wheel != nil) else { return }
         if let wheel {
             wheel.setMode(mode)
             return
@@ -57,14 +57,14 @@ final class DragController {
         show(at: NSEvent.mouseLocation, files: urls, mode: mode)
     }
 
-    private func selectedMode(flags: NSEvent.ModifierFlags, previous: NSEvent.ModifierFlags) -> MenuMode? {
+    static func selectedMode(flags: NSEvent.ModifierFlags, previous: NSEvent.ModifierFlags, hasMenu: Bool) -> MenuMode? {
         let keys: [(String, NSEvent.ModifierFlags)] = [("shift", .shift), ("command", .command), ("control", .control), ("option", .option)]
         func held(_ flags: NSEvent.ModifierFlags) -> Set<String> { Set(keys.filter { flags.contains($0.1) }.map(\.0)) }
         var mappings: [MenuMode: String] = [:]
         for mode in MenuMode.allCases {
             mappings[mode] = UserDefaults.standard.string(forKey: "key.\(mode.rawValue)") ?? mode.defaultKey
         }
-        return DragActivation.mode(current: held(flags), previous: held(previous), hasMenu: wheel != nil, mappings: mappings)
+        return DragActivation.mode(current: held(flags), previous: held(previous), hasMenu: hasMenu, mappings: mappings)
     }
 
     private func show(at point: NSPoint, files: [URL], mode: MenuMode) {
@@ -117,6 +117,7 @@ final class DropWheelView: NSView {
     var onDrop: (([URL], FileOperation) -> Void)?
     var onCancel: (() -> Void)?
     var preview = false
+    private var previewFlags: NSEvent.ModifierFlags = []
     private var tracking: NSTrackingArea?
     private let presentation = WheelPresentation()
     private var hosting: NSHostingView<WheelAppearance>?
@@ -179,6 +180,14 @@ final class DropWheelView: NSView {
         if preview { updateHighlight(at: convert(event.locationInWindow, from: nil)) }
     }
 
+    // the preview accepts the same modifiers so the real morph can be reviewed without a file drag
+    override func flagsChanged(with event: NSEvent) {
+        guard preview else { super.flagsChanged(with: event); return }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if let next = DragController.selectedMode(flags: flags, previous: previewFlags, hasMenu: true) { setMode(next) }
+        previewFlags = flags
+    }
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { cancelMenu(); return }
         if preview, [123, 124, 125, 126].contains(event.keyCode), !operations.isEmpty {
@@ -207,7 +216,9 @@ final class DropWheelView: NSView {
         operations = Catalog.operations(for: files, mode: mode)
         highlighted = nil
         setAccessibilityLabel("Fileel \(mode.rawValue)")
-        updatePresentation()
+        // the modifier owns this transaction even when no slice is highlighted
+        let animation: Animation? = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .timingCurve(0.22, 1, 0.36, 1, duration: 0.24)
+        withAnimation(animation) { updatePresentation() }
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {

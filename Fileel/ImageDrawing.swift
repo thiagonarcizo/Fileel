@@ -146,6 +146,17 @@ enum ImageDrawing {
         let width = image.width + padding * 2, height = image.height + padding * 2
         let ctx = try ImageEngine.context(width: width, height: height)
         let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        try paintBackground(in: ctx, bounds: bounds, options: options)
+        let imageRect = CGRect(x: padding, y: padding, width: image.width, height: image.height)
+        let radius = min(options.cornerRadius, Double(min(image.width, image.height)) / 2)
+        ctx.addPath(CGPath(roundedRect: imageRect, cornerWidth: max(0, radius), cornerHeight: max(0, radius), transform: nil))
+        ctx.clip()
+        ctx.draw(image, in: imageRect)
+        return ctx.makeImage()!
+    }
+
+    static func paintBackground(in ctx: CGContext, bounds: CGRect, options: OperationOptions) throws {
+        let width = bounds.width, height = bounds.height
         if options.backgroundStyle == "image", let url = options.backgroundImage {
             let backdrop = try ImageEngine.load(url)
             let scale = max(CGFloat(width) / CGFloat(backdrop.width), CGFloat(height) / CGFloat(backdrop.height))
@@ -159,12 +170,6 @@ enum ImageDrawing {
         } else {
             ctx.setFillColor(ImageEngine.color(options.backgroundHex)); ctx.fill(bounds)
         }
-        let imageRect = CGRect(x: padding, y: padding, width: image.width, height: image.height)
-        let radius = min(options.cornerRadius, Double(min(image.width, image.height)) / 2)
-        ctx.addPath(CGPath(roundedRect: imageRect, cornerWidth: max(0, radius), cornerHeight: max(0, radius), transform: nil))
-        ctx.clip()
-        ctx.draw(image, in: imageRect)
-        return ctx.makeImage()!
     }
 }
 

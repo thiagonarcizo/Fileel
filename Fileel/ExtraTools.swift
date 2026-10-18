@@ -12,7 +12,7 @@ enum ExtraTools {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.automaticallyDetectsLanguage = true
-        try VNImageRequestHandler(cgImage: ImageEngine.load(url)).perform([request])
+        try VisionExecution.perform([request], handler: VNImageRequestHandler(cgImage: ImageEngine.load(url)))
         return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
     }
 
@@ -21,7 +21,7 @@ enum ExtraTools {
         if tool == .removeBackground {
             let request = VNGenerateForegroundInstanceMaskRequest()
             let handler = VNImageRequestHandler(cgImage: original)
-            try handler.perform([request])
+            try VisionExecution.perform([request], handler: handler)
             guard let observation = request.results?.first else { throw FileelError.message("No foreground subject was found.") }
             let buffer = try observation.generateMaskedImage(ofInstances: observation.allInstances, from: handler, croppedToInstancesExtent: false)
             let ciImage = CIImage(cvPixelBuffer: buffer)
@@ -42,6 +42,13 @@ enum ExtraTools {
 
     static func pdf(_ input: URL, tool: FileTool, output: URL, options: OperationOptions, runner: ProcessRunner) throws {
         let document = try PDFEngine.load(input)
+        if tool == .watermarkPDF {
+            let data = try PDFWatermarkEngine.data(document: document, pages: Array(0..<document.pageCount), options: options,
+                                                   checkCancellation: { try runner.checkCancellation() })
+            try runner.checkCancellation()
+            try data.write(to: output, options: .atomic)
+            return
+        }
         if tool == .protectPDF {
             guard !options.password.isEmpty else { throw FileelError.message("Enter a password for this PDF.") }
             let settings: [PDFDocumentWriteOption: Any] = [.userPasswordOption: options.password, .ownerPasswordOption: UUID().uuidString]
@@ -56,25 +63,13 @@ enum ExtraTools {
             let data = Data(bytes: &box, count: MemoryLayout<CGRect>.size)
             context.beginPDFPage([kCGPDFContextMediaBox: data] as CFDictionary)
             page.draw(with: .mediaBox, to: context)
-            if tool == .watermarkPDF {
-                guard !options.text.isEmpty else { throw FileelError.message("Enter watermark text.") }
-                context.saveGState()
-                context.setAlpha(0.25)
-                context.translateBy(x: box.midX, y: box.midY)
-                context.rotate(by: .pi / 6)
-                let font = CTFontCreateWithName("Helvetica" as CFString, 42, nil)
-                let text = NSAttributedString(string: options.text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])
-                let line = CTLineCreateWithAttributedString(text)
-                context.textPosition = CGPoint(x: -CTLineGetTypographicBounds(line, nil, nil, nil) / 2, y: 0)
-                CTLineDraw(line, context)
-                context.restoreGState()
-            } else {
+            if tool != .watermarkPDF {
                 // overlay invisible OCR glyphs only on pages without selectable text
                 if (page.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     let request = VNRecognizeTextRequest()
                     request.recognitionLevel = .accurate
                     request.automaticallyDetectsLanguage = true
-                    try VNImageRequestHandler(cgImage: PDFEngine.render(page)).perform([request])
+                    try VisionExecution.perform([request], handler: VNImageRequestHandler(cgImage: PDFEngine.render(page)))
                     for observation in request.results ?? [] {
                         guard let string = observation.topCandidates(1).first?.string else { continue }
                         let rect = observation.boundingBox

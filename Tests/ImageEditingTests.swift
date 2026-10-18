@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import Vision
 import XCTest
 @testable import FileelCore
 
@@ -86,6 +87,40 @@ final class ImageEditingTests: XCTestCase {
         let result = try ImageDrawing.background(image, options: options)
         XCTAssertGreaterThan(try color(result, x: 2, y: 2).redComponent, 0.95)
         XCTAssertGreaterThan(try color(result, x: 220, y: 120).blueComponent, 0.8)
+    }
+
+    func testCollageUsesEveryImageAndRespectsGradientAndCornerRadius() throws {
+        var options = OperationOptions()
+        options.width = 100; options.height = 100; options.padding = 10; options.columns = 2
+        options.backgroundStyle = "gradient"; options.backgroundHex = "FF0000"; options.backgroundEndHex = "00FF00"
+        options.cornerRadius = 20
+        let red = try ImageEngine.context(width: 100, height: 100)
+        red.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        red.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        let square = try ImageEngine.context(width: 100, height: 100)
+        square.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        square.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+        let collage = try ImageEngine.collage([red.makeImage()!, square.makeImage()!], options: options)
+        XCTAssertEqual(collage.width, 230); XCTAssertEqual(collage.height, 120)
+        XCTAssertGreaterThan(try color(collage, x: 60, y: 60).redComponent, 0.95)
+        XCTAssertGreaterThan(try color(collage, x: 170, y: 60).blueComponent, 0.95)
+        XCTAssertLessThan(try color(collage, x: 121, y: 11).blueComponent, 0.05)
+        XCTAssertGreaterThan(try color(collage, x: 228, y: 118).greenComponent, 0.8)
+        XCTAssertThrowsError(try ImageEngine.collage([CGImage](), options: options))
+    }
+
+    func testFullImageDecodeDoesNotSilentlyShrinkWideOriginals() throws {
+        let width = 17000
+        let pixels = Data(repeating: 180, count: width * 4)
+        let provider = try XCTUnwrap(CGDataProvider(data: pixels as CFData))
+        let wide = try XCTUnwrap(CGImage(width: width, height: 1, bitsPerComponent: 8, bitsPerPixel: 32,
+                                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                       provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let input = folder.appendingPathComponent("wide.png")
+        try ImageEngine.write(wide, to: input, options: .init())
+        XCTAssertEqual(try ImageEngine.load(input).width, width)
+        XCTAssertEqual(try ImageEngine.load(input, maximumPixelSize: 200).width, 200)
     }
 
     func testOperationGroupMatchesTheGlobalMenuSelection() {
@@ -202,6 +237,11 @@ final class ImageEditingTests: XCTestCase {
         guard case .clipboard(let text) = result else { return XCTFail("OCR must return clipboard text") }
         XCTAssertTrue(text.contains("FILEEL OCR TEST"), text)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(), before)
+        let cpu = VNRecognizeTextRequest()
+        cpu.recognitionLevel = .accurate
+        cpu.automaticallyDetectsLanguage = true
+        try VisionExecution.perform([cpu], handler: VNImageRequestHandler(cgImage: ImageEngine.load(textImage)), preferCPU: true)
+        XCTAssertTrue((cpu.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ").contains("FILEEL OCR TEST"))
     }
 
     func testLargeImagePreviewKeepsOriginalDimensionsAndDecodesOnlyOnce() async throws {
@@ -223,6 +263,24 @@ final class ImageEditingTests: XCTestCase {
         let loads = await renderer.sourceLoads
         XCTAssertEqual(loads, 1)
         print("20 cached 1600 px adjustments from a 12 MP source: \(start.duration(to: clock.now))")
+    }
+
+    func testClipboardImageContainsEditedPixelsWithoutAFileOrLocationMetadata() throws {
+        var tagged = OperationOptions(); tagged.latitude = "-22"; tagged.longitude = "-47"
+        let original = folder.appendingPathComponent("tagged.jpg")
+        try ImageEngine.write(image, to: original, options: tagged)
+        var options = OperationOptions()
+        options.annotations = [.init(kind: .cover, startX: 0.1, startY: 0.1, endX: 0.5, endY: 0.5, hex: "FF0000")]
+        let before = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+        let data = try ImageEngine.clipboardPNG([original], tool: .annotateImage, options: options)
+        let encoded = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let result = try XCTUnwrap(CGImageSourceCreateImageAtIndex(encoded, 0, nil))
+        XCTAssertEqual(result.width, 400)
+        XCTAssertEqual(result.height, 200)
+        XCTAssertGreaterThan(try color(result, x: 100, y: 40).redComponent, 0.95)
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(encoded, 0, nil) as? [CFString: Any])
+        XCTAssertNil(properties[kCGImagePropertyGPSDictionary])
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted(), before)
     }
 
 }

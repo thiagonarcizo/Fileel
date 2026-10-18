@@ -5,6 +5,7 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let dragController = DragController()
+    private let updater = UpdaterManager.shared
     func applicationWillFinishLaunching(_ notification: Notification) {
         // stay out of the dock and app switcher even when a utility window is open
         NSApp.setActivationPolicy(.accessory)
@@ -12,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppModel.shared.showWorkspace = { WorkspaceWindowController.shared.show() }
         dragController.start()
+        updater.start()
         if !UserDefaults.standard.bool(forKey: "onboardingCompleted") { OnboardingWindowController.shared.show() }
     }
     func applicationWillTerminate(_ notification: Notification) {
@@ -33,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct FileelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @AppStorage("dragEnabled") private var dragEnabled = true
+    @ObservedObject private var updater = UpdaterManager.shared
 
     var body: some Scene {
         MenuBarExtra {
@@ -45,6 +48,8 @@ struct FileelApp: App {
             Button("Choose Files…") { WorkspaceWindowController.shared.show(); AppModel.shared.chooseFiles() }
             Divider()
             Button("Settings…") { SettingsWindowController.shared.show() }
+            Button(updater.updateVersion.map { "Update to \($0)…" } ?? "Check for Updates…") { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
             Divider()
             Button("Quit Fileel") { NSApp.terminate(nil) }.keyboardShortcut("q")
         } label: {

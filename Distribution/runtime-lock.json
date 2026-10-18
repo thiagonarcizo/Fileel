@@ -1,0 +1,103 @@
+{
+  "schema": 1,
+  "architecture": "arm64",
+  "minimum_macos": "14.0",
+  "components": {
+    "ffmpeg": {
+      "version": "9.0.2",
+      "url": "https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz",
+      "sha256": "8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e",
+      "license": "LGPL-2.1-or-later",
+      "homepage": "https://ffmpeg.org/"
+    },
+    "aom": {
+      "version": "3.15.2",
+      "url": "https://aomedia.googlesource.com/aom.git",
+      "sha256": null,
+      "license": "BSD-2-Clause",
+      "homepage": "https://aomedia.googlesource.com/aom",
+      "revision": "af3dc9aadc793c1b00edc003e3fc19a44fdeb574",
+      "tag": "v3.15.2"
+    },
+    "lame": {
+      "version": "4.0",
+      "url": "https://downloads.sourceforge.net/project/lame/lame/4.0/lame-4.0.tar.gz",
+      "sha256": "3df5124d5ad3a98312ffd7ba6a9b36230e4f8a3e66d3ce0f425e336c32d216eb",
+      "license": "LGPL-2.0-or-later",
+      "homepage": "https://lame.sourceforge.io/"
+    },
+    "libogg": {
+      "version": "1.3.6",
+      "url": "https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-1.3.6.tar.gz",
+      "sha256": "83e6704730683d004d20e21b8f7f55dcb3383cdf84c0daedf30bde175f774638",
+      "license": "BSD-3-Clause",
+      "homepage": "https://www.xiph.org/ogg/"
+    },
+    "libvorbis": {
+      "version": "1.3.7",
+      "url": "https://ftp.osuosl.org/pub/xiph/releases/vorbis/libvorbis-1.3.7.tar.xz",
+      "sha256": "b33cc4934322bcbf6efcbacf49e3ca01aadbea4114ec9589d1b1e9d20f72954b",
+      "license": "BSD-3-Clause",
+      "homepage": "https://xiph.org/vorbis/"
+    },
+    "opus": {
+      "version": "1.6.1",
+      "url": "https://ftp.osuosl.org/pub/xiph/releases/opus/opus-1.6.1.tar.gz",
+      "sha256": "6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1",
+      "license": "BSD-3-Clause",
+      "homepage": "https://www.opus-codec.org/"
+    },
+    "libvpx": {
+      "version": "1.17.0",
+      "url": "https://github.com/webmproject/libvpx/archive/refs/tags/v1.17.0.tar.gz",
+      "sha256": "1020f184046187baa2985dbde38e0691f49c44088bca7a1842b0236c6081dc0a",
+      "license": "BSD-3-Clause",
+      "homepage": "https://www.webmproject.org/code/"
+    },
+    "webp": {
+      "version": "1.6.0",
+      "url": "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz",
+      "sha256": "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564",
+      "license": "BSD-3-Clause",
+      "homepage": "https://developers.google.com/speed/webp/"
+    },
+    "ghostscript": {
+      "version": "10.08.0",
+      "url": "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/ghostpdl-10.08.0.tar.xz",
+      "sha256": "94943e3c4adb7115d132b3c28b913672f2e62e6a9d802f7e754e716b1634174a",
+      "license": "AGPL-3.0-or-later",
+      "homepage": "https://www.ghostscript.com/"
+    },
+    "pandoc": {
+      "version": "3.1.13",
+      "url": "https://github.com/jgm/pandoc/releases/download/3.1.13/pandoc-3.1.13-arm64-macOS.zip",
+      "sha256": "76b1722c81f0f9349b6eef1bf387226f2eb277a7ed47641475b9edb53403b980",
+      "license": "GPL-2.0-or-later",
+      "homepage": "https://pandoc.org/",
+      "source": {
+        "url": "https://codeload.github.com/jgm/pandoc/tar.gz/refs/tags/3.1.13",
+        "filename": "pandoc-3.1.13-source.tar.gz",
+        "sha256": "e00265e5aa56ecb214d12fd7781e87d77abf101dd8d02e15c4d648ad50a5ef80"
+      }
+    },
+    "7zip": {
+      "version": "26.04",
+      "url": "https://github.com/ip7z/7zip/releases/download/26.04/7z2604-src.tar.xz",
+      "sha256": "9691944c0fe0d01bb49373a704fb983fd33bc98b1738695179dfbf99ac1734f6",
+      "license": "LGPL-2.1-or-later AND BSD-3-Clause AND unRAR",
+      "homepage": "https://www.7-zip.org/"
+    },
+    "libreoffice": {
+      "version": "26.8.1",
+      "url": "https://download.documentfoundation.org/libreoffice/stable/26.8.1/mac/aarch64/LibreOffice_26.8.1_MacOS_aarch64.dmg",
+      "sha256": "ca074e0b13571efb30a31fc531c5f95e997030637325e5d5de92d67aefdf0dfc",
+      "license": "MPL-2.0",
+      "homepage": "https://www.libreoffice.org/",
+      "source": {
+        "url": "https://download.documentfoundation.org/libreoffice/src/26.8.1/libreoffice-26.8.1.1.tar.xz",
+        "filename": "libreoffice-26.8.1.1.tar.xz",
+        "sha256": "296ba78e7ab0d381b94c3d6342f4ebb2320ee5097ca58781b9b744cab90b9785"
+      }
+    }
+  }
+}

@@ -18,31 +18,33 @@ final class MediaPreviewModel: ObservableObject {
     @Published var error: String?
     private var observer: Any?
     private var playbackObservation: NSKeyValueObservation?
+    private var previewSource: MediaPreviewSource?
+    private var previewRunner: ProcessRunner?
+    private var loadID = UUID()
     var rangeEnd: Double?
 
     func load(_ url: URL) async {
         stop()
+        let id = loadID
+        let runner = ProcessRunner()
+        previewRunner = runner
+        var pending: MediaPreviewSource?
         do {
-            let asset = AVURLAsset(url: url)
-            guard try await asset.load(.isPlayable) else {
-                throw FileelError.message("This format can be processed, but the system player cannot preview it. Use Quick Look or convert a copy to MP4 or M4A first.")
-            }
-            let time = try await asset.load(.duration).seconds
+            let prepared = try await MediaPreviewSource.prepare(url, runner: runner)
+            pending = prepared
             try Task.checkCancellation()
-            guard time.isFinite, time > 0 else { throw FileelError.message("The media duration is unavailable.") }
-            if let track = try await asset.loadTracks(withMediaType: .video).first {
-                let size = try await track.load(.naturalSize)
-                let transform = try await track.load(.preferredTransform)
-                let displayed = size.applying(transform)
-                try Task.checkCancellation()
-                videoSize = CGSize(width: abs(displayed.width), height: abs(displayed.height))
-            }
+            guard loadID == id else { throw CancellationError() }
+            let time = prepared.duration
+            let asset = AVURLAsset(url: prepared.url)
+            previewSource = prepared
+            pending = nil
+            videoSize = prepared.videoSize
             duration = time
             current = 0
             player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
             observer = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1.0 / 30, preferredTimescale: 600), queue: .main) { [weak self] time in
                 MainActor.assumeIsolated {
-                    guard let self else { return }
+                    guard let self, self.loadID == id else { return }
                     self.current = time.seconds
                     if let rangeEnd = self.rangeEnd, self.current >= rangeEnd { self.player.pause() }
                 }
@@ -50,15 +52,19 @@ final class MediaPreviewModel: ObservableObject {
             playbackObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
                 let playing = player.timeControlStatus == .playing
                 guard let model = self else { return }
-                Task { @MainActor in model.playing = playing }
+                Task { @MainActor in if model.loadID == id { model.playing = playing } }
             }
             ready = true
             error = nil
-            let peaks = (try? await WaveformSampler.read(url, duration: time)) ?? []
+            let peaks = (try? await WaveformSampler.read(prepared.url, duration: time)) ?? []
             try Task.checkCancellation()
+            guard loadID == id else { return }
             waveform = peaks
-        } catch is CancellationError { return }
-        catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+        } catch is CancellationError { pending?.removeTemporaryFiles() }
+        catch {
+            pending?.removeTemporaryFiles()
+            if !Task.isCancelled, loadID == id { self.error = error.localizedDescription }
+        }
     }
 
     func seek(_ seconds: Double) {
@@ -79,11 +85,16 @@ final class MediaPreviewModel: ObservableObject {
     }
 
     func stop() {
+        loadID = UUID()
+        previewRunner?.cancel()
+        previewRunner = nil
         player.pause()
         if let observer { player.removeTimeObserver(observer) }
         observer = nil
         playbackObservation = nil
         player.replaceCurrentItem(with: nil)
+        previewSource?.removeTemporaryFiles()
+        previewSource = nil
         ready = false; playing = false; waveform = []; videoSize = .zero; duration = 0; current = 0; rangeEnd = nil; error = nil
     }
 }
@@ -94,12 +105,16 @@ struct MediaPreviewView: View {
     let operation: FileOperation?
     @Binding var options: OperationOptions
     @StateObject private var media = MediaPreviewModel()
+    @ObservedObject private var jobs = AppModel.shared
     var onPosition: (Double) -> Void = { _ in }
     var onDuration: (Double) -> Void = { _ in }
     var onVideoSize: (CGSize) -> Void = { _ in }
     private var editsRectangle: Bool { operation == .tool(.cropVideo) || operation == .tool(.redactVideo) }
     private var isVideo: Bool { FileFamily.detect(url) == .video }
-    private var editsRange: Bool { [.tool(.trimAudio), .tool(.trimVideo), .tool(.bleep), .tool(.redactVideo)].contains(operation) }
+    private var editsRange: Bool {
+        if operation == .tool(.bleep) { return !options.bleepRanges.isEmpty }
+        return [.tool(.trimAudio), .tool(.trimVideo), .tool(.redactVideo)].contains(operation)
+    }
     private var speed: Double { operation == .tool(.speed) ? options.speed : 1 }
 
     var body: some View {
@@ -117,7 +132,13 @@ struct MediaPreviewView: View {
                     if isVideo {
                         if editsRectangle {
                             MediaPlayerSurface(player: media.player)
-                                .overlay { VideoRectangleOverlay(size: media.videoSize, options: $options, redaction: operation == .tool(.redactVideo), pause: { media.player.pause() }) }
+                                .overlay {
+                                    if operation == .tool(.cropVideo) {
+                                        CropOverlay(size: media.videoSize, options: $options, inset: 0, alignment: 2, pause: { media.player.pause() })
+                                    } else {
+                                        VideoRectangleOverlay(size: media.videoSize, options: $options, redaction: true, pause: { media.player.pause() })
+                                    }
+                                }
                         } else { VideoPlayer(player: media.player) }
                     }
                     else {
@@ -127,18 +148,24 @@ struct MediaPreviewView: View {
                             Text("Ready to preview").font(.caption).foregroundStyle(.secondary)
                         }.padding(24)
                     }
-                } else { ProgressView().controlSize(.small) }
+                } else {
+                    VStack(spacing: 10) {
+                        ProgressView().controlSize(.small)
+                        Text("Preparing Preview").font(.callout).foregroundStyle(.secondary)
+                    }
+                }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             if media.ready {
                 VStack(spacing: 12) {
                     MediaTimeline(waveform: media.waveform, duration: media.duration, current: media.current,
                                   start: $options.start, end: $options.end, editsRange: editsRange,
-                                  cuts: operation == .tool(.splitVideo) ? options.splitPoints.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) } : [], seek: media.seek)
+                                  cuts: operation == .tool(.splitVideo) ? options.splitPoints.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) } : [],
+                                  markedRanges: operation == .tool(.bleep) ? options.bleepRanges : [], seek: media.seek)
                         .frame(height: 68)
                     HStack(spacing: 12) {
                         Button { media.toggle(start: editsRange ? options.start : 0, end: editsRange ? options.end : media.duration, rate: speed) } label: {
-                            Label(media.playing ? "Pause" : "Play", systemImage: media.playing ? "pause.fill" : "play.fill")
-                        }.controlSize(.small)
+                            Label(media.playing ? "Pause" : operation == .tool(.bleep) ? "Play Original" : "Play", systemImage: media.playing ? "pause.fill" : "play.fill")
+                        }.controlSize(.small).keyboardShortcut(.space, modifiers: []).help("Play / Pause (Space)")
                         if isVideo {
                             Button { media.player.pause(); media.player.currentItem?.step(byCount: -1) } label: { Image(systemName: "backward.frame") }.help("Previous frame")
                             Button { media.player.pause(); media.player.currentItem?.step(byCount: 1) } label: { Image(systemName: "forward.frame") }.help("Next frame")
@@ -153,23 +180,40 @@ struct MediaPreviewView: View {
             }
         }
         .task(id: url) { await media.load(url) }
+        .onChange(of: jobs.busy) { _, busy in if busy { media.player.pause() } }
         .onChange(of: media.duration) { _, duration in
+            resetSelection()
             onDuration(duration)
-            if duration > 0, editsRange { options.start = 0; options.end = duration; media.rangeEnd = duration }
         }
         .onChange(of: operation) { _, _ in
             media.player.pause()
-            if media.duration > 0, editsRange { options.start = 0; options.end = media.duration }
-            media.rangeEnd = editsRange ? options.end : nil
+            resetSelection()
         }
         .onChange(of: options.end) { _, end in media.rangeEnd = editsRange ? end : nil }
+        .onChange(of: editsRange) { _, editing in media.rangeEnd = editing ? options.end : nil }
         .onChange(of: options.speed) { _, _ in if media.playing { media.player.rate = Float(speed) } }
         .onChange(of: media.current) { _, current in
             onPosition(current)
             if operation == .tool(.snapshots) { options.start = current }
         }
-        .onChange(of: media.videoSize) { _, size in onVideoSize(size) }
+        .onChange(of: media.videoSize) { _, size in
+            onVideoSize(size)
+            if operation == .tool(.cropVideo), options.width <= 0, size.width > 0 {
+                CropGeometry.apply(CGRect(origin: .zero, size: size), to: &options, alignment: 2)
+            }
+        }
         .onDisappear { media.stop() }
+    }
+
+    private func resetSelection() {
+        guard media.duration > 0 else { return }
+        if operation == .tool(.bleep) {
+            if !options.usesBleepRanges {
+                options.usesBleepRanges = true
+            }
+            if let first = options.bleepRanges.first { options.start = first.start; options.end = first.end }
+        } else if editsRange { options.start = 0; options.end = media.duration }
+        media.rangeEnd = editsRange ? options.end : nil
     }
 }
 
@@ -181,6 +225,7 @@ private struct MediaTimeline: View {
     @Binding var end: Double
     let editsRange: Bool
     let cuts: [Double]
+    let markedRanges: [AudioRedactionRange]
     var seek: (Double) -> Void
     @State private var handle: Int?
 
@@ -190,6 +235,11 @@ private struct MediaTimeline: View {
                 let startX = TimelineGeometry.position(at: start, width: size.width, duration: duration)
                 let endX = TimelineGeometry.position(at: end, width: size.width, duration: duration)
                 context.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 6), with: .color(Color(nsColor: .controlBackgroundColor)))
+                for range in markedRanges {
+                    let a = TimelineGeometry.position(at: range.start, width: size.width, duration: duration)
+                    let b = TimelineGeometry.position(at: range.end, width: size.width, duration: duration)
+                    context.fill(Path(roundedRect: CGRect(x: a, y: 0, width: max(0, b - a), height: size.height), cornerRadius: 4), with: .color(.accentColor.opacity(0.12)))
+                }
                 if editsRange {
                     context.fill(Path(CGRect(x: startX, y: 0, width: max(0, endX - startX), height: size.height)), with: .color(.accentColor.opacity(0.14)))
                 }

@@ -4,7 +4,7 @@ import Foundation
 enum ArchiveEngine {
     static func extract(_ input: URL, folder: URL, runner: ProcessRunner) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        if input.pathExtension == "gz", !input.lastPathComponent.lowercased().hasSuffix(".tar.gz") {
+        if input.pathExtension.lowercased() == "gz", !input.lastPathComponent.lowercased().hasSuffix(".tar.gz") {
             let file = folder.appendingPathComponent(input.deletingPathExtension().lastPathComponent)
             try runner.run(URL(fileURLWithPath: "/usr/bin/gzip"), ["-dc", input.path], output: file)
             return
@@ -61,7 +61,8 @@ enum ArchiveEngine {
             try runner.run(Engines.require("7zz"), ["a", "-tzip", "-mem=AES256", "-p", output.path, "--"] + names,
                            directory: folder, input: password)
         } else if tool == .listArchive {
-            let listing = try runner.run(URL(fileURLWithPath: "/usr/bin/tar"), ["-tvf", input.path])
+            // the bundled reader handles plain gzip streams as well as multi-file archives
+            let listing = try runner.run(Engines.require("7zz"), ["l", "-ba", "--", input.path])
             try listing.write(to: output, atomically: true, encoding: .utf8)
         } else {
             let result = try runner.run(Engines.require("7zz"), ["t", "--", input.path])

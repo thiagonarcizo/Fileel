@@ -1,6 +1,6 @@
 # v0 coverage and acceptance
 
-The requested v0 includes all functionality described by the Tangerine public demo and website on 2026-10-18, plus the additional tools requested in this chat. Reference: https://tangerineformac.com/
+The v0 scope includes local file conversions, contextual editing tools, drag shortcuts, floating files and signed automatic updates, together with the interaction and design requirements tracked below
 
 This is a development checklist. The app is not described as feature-complete solely because an operation exists in the catalog
 
@@ -8,9 +8,9 @@ This is a development checklist. The app is not described as feature-complete so
 
 | Family | Conversion outputs | Tools |
 | --- | --- | --- |
-| Images | JPG, PNG, WebP, HEIC, TIFF, AVIF, PDF | Compression, metadata, adjustments, text annotation, background, crop, solid redaction, image-to-PDF, collage, resize, rotate/flip, remove background, OCR |
-| Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF | Compression, metadata, normalization, trim, mono/stereo, waveform video, bleep, fades, remove silence, join |
-| Video | MP4, MOV, MKV, WebM, GIF, MP3 | Compression, metadata, trim, split, crop, speed, mute, snapshots, join, solid redaction, resize, rotate/flip, extract audio, add/extract subtitles |
+| Images | JPG, PNG, WebP, HEIC, TIFF, AVIF, BMP, PDF | Target-size compression, metadata, adjustments, automatic enhancement, annotation, background, crop, solid or randomized-mosaic redaction, image-to-PDF, collage, resize, rotate/flip, remove background, clipboard OCR |
+| Audio | MP3, M4A, WAV, FLAC, OGG, Opus, AIFF, WMA | Compression, metadata, normalization, trim, mono/stereo, waveform video, bleep, fades, remove silence, join |
+| Video | MP4, MOV, MKV, WebM, AVI, WMV, GIF, MP3 | Target-size compression, metadata, trim, crop, speed, mute, snapshots, join, solid redaction, resize, rotate/flip, extract audio, add/extract subtitles |
 | PDF | DOCX, PAGES, PPTX, XLSX, JPG, PNG, EPUB, TXT, MD | Compression, metadata, merge, split, reorder/duplicate/remove/rotate pages, password protection, watermark, searchable OCR |
 | Documents / EPUB | DOCX, PAGES, PDF, HTML, EPUB, TXT, MD, JPG, PNG | Word count, text comparison, clear formatting |
 | Slides | PDF, JPG, PNG | Legacy PPT input |
@@ -18,26 +18,37 @@ This is a development checklist. The app is not described as feature-complete so
 | Subtitles | SRT, VTT, TXT | Offset, playback speed, join |
 | Archives | ZIP, TAR, TAR.GZ | Extraction, listing, integrity test, AES-encrypted ZIP |
 
-The six reference file actions are implemented: AirDrop, floating files, copy, move, copy path, and Terminal. Additional actions: Quick Look, reveal in Finder, batch rename, duplicate, and SHA-256
+The core file actions are implemented: AirDrop, floating files, copy, move, copy path, and Terminal. Additional actions: Quick Look, reveal in Finder, batch rename, duplicate, and SHA-256
 
-Input aliases and format families are declared in `Fileel/Catalog.swift`. An exact count of 249 equivalent conversion paths has not been audited. Input format variants, legacy formats, encryption, embedded fonts, and unusual codecs need dedicated fixtures before making that claim
+Input aliases and format families are declared in `Fileel/Catalog.swift`. GIF inputs do not offer MP3 conversion, audio removal or audio/subtitle extraction because GIF contains neither type of stream. Real-engine fixtures cover all 26 newly added BMP, WMA, AVI and WMV routes, including decoded dimensions, color, codecs, duration and unchanged originals. SVG rasterization uses explicit pixel dimensions independent of display scale. Input format variants, legacy formats, encryption, embedded fonts, and unusual codecs need dedicated fixtures before advertising a total conversion count
+
+WMA and WMV use WMA v2 audio, which supports mono/stereo up to 48 kHz. High-rate or surround inputs are resampled/downmixed for that encoder; existing mono/stereo 44.1/48 kHz layouts are retained
 
 ## Fidelity limits that still need work before v0
 
 - The global Finder drag and modifier workflow needs end-to-end interactive validation, especially modifier interactions, cancellation, multiple displays, full-screen apps, and sources other than Finder
 - Trackpad haptics are requested through the native API; physical feedback has not been validated by a person on a supported trackpad
-- The image editing canvas now implements drag cropping, arrows, rectangles, ellipses, text, numbered callouts, and undo/redo. Exported pixels and coordinate mapping are tested; pointer interactions and the new layout still need interactive QA
+- The image editing canvas implements a persistent crop frame with move/resize handles, aspect presets, ratio locking, orientation changes, arrows, rectangles, ellipses, text, numbered callouts, and undo/redo. Exported pixels and crop geometry are tested; complete pointer interaction QA remains outstanding
 - Background editing now implements solid colors, gradients, an image backdrop, spacing, and rounded source corners. Exported pixels are tested; live preview layout still needs interactive QA
 - Metadata editing now supports author/artist, title, camera make/model, image lens, signed latitude/longitude, removal of location, and removal of existing tags. Image tags are tested; media edits preserve encoded audio/video stream hashes through remuxing
-- Native media previews now implement playback, scrubbing, frame stepping, a waveform decoded from the actual audio, and draggable range handles. Native-unplayable formats still need a proxy-preview path; video crop remains coordinate-based and multiple split/bleep ranges need direct editing
-- Image redaction now implements manual solid and blurred regions, plus local face/text detection. Blur is tested not to restore original pixels beneath an earlier solid cover. Tracked video regions, multiple bleep ranges, and exhaustive detection review remain outstanding
-- PDF-to-DOCX/PAGES/EPUB exports extracted text with local OCR fallback; original layout, embedded graphics, and table structure are not reconstructed
-- PDF-to-PPTX uses rendered pages as slide images; editable elements and preservation of varied page aspect ratios remain outstanding
-- PDF-to-XLSX exports text lines as rows, not recovered table cells. Selected-sheet CSV exports cached values, not recalculated formulas or formatting
-- Pages output uses installed Apple Pages; its Apple events flow has not been validated interactively. RTFD and Finder text clipping compatibility need fixtures
-- Video joining normalizes to 1280×720/30 fps; clips without audio and complex track layouts still need acceptance coverage
-- Image compression currently uses encoder quality; exact target-byte or percentage reduction controls remain outstanding
-- Engine bundling, exact codec inventory, dependency source/license packaging, release signing, notarization, and an update mechanism remain outstanding
+- Native media previews implement playback, scrubbing, frame stepping, a waveform decoded from the actual audio, draggable range handles, a shared image/video crop frame and a Space playback shortcut. Unsupported playback formats use an isolated local proxy, with a fast remux attempted first; smaller video proxies retain original pixel coordinates for cropping. Tests decode actual proxy frames/audio and verify cleanup, cancellation and unchanged originals
+- Audio bleeping supports multiple editable ranges, visible waveform marks, per-sample replacement and short tone ramps. Decoded-sample tests verify exact boundaries, both stereo channels, overlapping selections, unchanged samples outside lossless edits, float PCM, 24-bit ALAC/FLAC and invalid/removed selections. Its dedicated range inspector still needs pointer acceptance
+- Image redaction implements manual color fill and randomized mosaic regions, plus local face/text detection. Randomized mosaic is tested to be independent of covered source pixels. Video redaction covers a fixed area for the selected time range. Broader detection fixtures and pointer acceptance remain outstanding
+- PDF-to-DOCX and PAGES now use the office engine's positioned-text/graphics importer when each page contains selectable text and its letters survive import. Missing or substituted letters trigger the extracted-text fallback; scanned PDFs retain local OCR. Complex tables, mixed scans and unusual fonts still need broader fixtures; PDF-to-EPUB remains a reflowed text conversion
+- PDF-to-PPTX imports editable text and vector shapes. The page-image fallback preserves aspect ratios and centers mixed page orientations rather than stretching them. Generated round-trip fixtures verify page count, portrait geometry, editable text and artwork position
+- PDF-to-XLSX recovers rows and columns from text positions and repeated gutters, with one sheet per page. Scans use local OCR plus targeted cell recognition for isolated digits. Tests verify native/scanned tables, numeric values, leading-zero identifiers, genuinely empty cells, inert formula-like text and Office interoperability. Complex merged tables and broader real-world layouts still need acceptance coverage. Selected-sheet CSV exports cached values, not recalculated formulas or formatting
+- Pages output uses installed Apple Pages through an isolated scripting worker, keeping Apple's scripting runtime on its own main thread. The worker opens a private copy, passes paths as literal arguments and attempts bounded cleanup of its own document on cancellation. Tests cover symlink inputs, source ownership, cleanup and quote/newline arguments; both scripts compile against Pages' dictionary. Its actual Apple events and permission flow still need interactive acceptance. Native RTFD input is normalized to rich text with embedded PNG pictures before Office conversion; tests verify Unicode text, bold formatting, repeated attachments, PDF rendering, standalone HTML and embedded EPUB images. Unsupported non-image attachments fail explicitly rather than disappearing. Finder clippings read modern property-list representations and classic text resource forks, with real Apple-compiled fixtures and malformed-map checks
+- Markdown with images exports as a portable folder containing the document and relative media paths. Text-only Markdown remains a single file. Tests move a published export after its transaction workspace and original image are gone, compare the extracted PNG bytes and import the Markdown back into DOCX with its picture intact. Image display sizing is omitted to keep standard Markdown syntax rather than raw HTML
+- Archive listing uses the bundled reader for both plain gzip streams and multi-file archives. Generated fixtures cover lowercase/uppercase GZ listing, integrity, byte-exact extraction and conversion, plus ZIP/TAR/TAR.GZ round trips with nested Unicode names. Plain streams stay single files; tarball contents stay expanded
+- Video joining copies compatible H.264/HEVC streams when Keep Quality is enabled. Mixed clips use the first clip's display canvas, square pixels and the highest selected frame rate; missing audio is padded with silence only when other clips have audio. Tests verify encoded packet preservation, native 1080p dimensions, anamorphic display ratios and the decoded silent/audible timeline. A dedicated sequence sidebar supports selection and reordering before joining. Mixed HDR/SDR and complex track layouts still need acceptance coverage
+- Compression accepts a requested percentage for images, PDFs and video. Image/PDF previews measure actual local test encodes; video shows a bitrate-based estimate. Exact byte targets are not guaranteed, and an unreachable target is reported honestly. An original-file fallback is allowed only when no metadata change was requested; privacy changes take precedence over avoiding a larger output
+- Generated privacy fixtures cover JPEG orientation and exact decoded pixels after lossless metadata removal, PNG pixels, unchanged video packets, global/stream tags, and PDF Info/XMP removal at 0% reduction with selectable text, form values, annotations and bookmark destinations preserved. Source bytes remain unchanged
+- PDF organization now uses per-page thumbnail identities, reorder, duplicate, delete and individual rotation. Backend tests verify page order, selectable text, independent duplicate rotation and preservation of originals; drag-and-drop UI acceptance remains outstanding
+- Watermark preview and export use the same vector PDF renderer. Tests verify all four page rotations, artwork placement, selectable source/watermark text, chosen metadata and cancellation
+- Raster PDF export and OCR share that explicit page transform, preserving all four rotations across macOS versions; invalid or excessive raster resolutions fail before bitmap allocation
+- The complete runtime-bearing Developer ID app and its branded DMG have passed Apple notarization, ticket validation and update-signature verification. An isolated signed app has completed real Sparkle installation/relaunch, invalid-download rejection, preference retention and a stable/beta/stable round trip, including background checks. Two protected beta CI runs repeated signing, notarization, branded DMG creation, installed-update tests and temporary draft upload/download/cleanup ([first](https://github.com/thiagonarcizo/Fileel/actions/runs/39107534104), [second](https://github.com/thiagonarcizo/Fileel/actions/runs/39111478463)). This integrated candidate still needs that rehearsal; production-channel and visual updater acceptance remain outstanding
+- The runtime payload contains pinned ARM64 conversion tools, codec dependencies, upstream notices and a corresponding source archive. Its 223 native executables/libraries declare macOS 14 or earlier. The latest integrated run passed 97 tests with the bundled engines; the preceding 94-test dependency-isolation run denied Homebrew, `/usr/local`, the system LibreOffice installation and build-only runtime inputs. A separate clean-Mac installation and complete signed-app acceptance remain outstanding
+- Collage previews include every selected source and share gradient/rounded-corner rendering with exports. Full image decoding no longer silently shrinks originals wider than 16384 pixels
 
 ## Acceptance evidence
 
@@ -45,6 +56,8 @@ Automated tests cover generated image conversions, output collision protection, 
 
 Additional tests cover image canvas mapping, annotation output pixels, gradients and rounded backgrounds, camera/GPS metadata preservation and location removal, encoded-stream preservation during media metadata edits, timeline boundaries, waveform decoding, and modifier keys held before a drag
 
-The latest native UI review was blocked because the Mac was locked. The image and media editor changes must not be described as visually accepted until the Mac is unlocked and the actual windows are reviewed
+Native UI review verified the onboarding, Test Haptic label, Keep Quality enabled by default, conditional quality slider, and double-click slider reset. Switching the preview's modifier changes modes without hovering a slice. A wheel screenshot exposed truncated captions; compact labels and font measurements now cover every catalog group, and the updated rendering still needs review. Dedicated photo, video and PDF windows are not yet fully accepted
+
+The stable and beta installer artwork has been reviewed at Retina resolution, including typography, contrast and the beta badge. Finder supplies the actual app/Applications icons over the artwork; the mounted installer layout still needs native UI acceptance
 
 Further acceptance requires real-world fixtures for every supported input extension, visual comparisons for fidelity, accessibility review, light/dark/increased-contrast review, physical trackpad feedback, and a self-contained signed release install on a clean Mac

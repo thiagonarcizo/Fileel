@@ -9,10 +9,13 @@ enum MediaEngine {
         let family = FileFamily.detect(input)
         var args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-y"] + inputArguments + ["-i", input.path]
         if !filters.isEmpty { args += ["-vf", filters.joined(separator: ",")] }
-        if !audioFilters.isEmpty { args += ["-af", audioFilters.joined(separator: ",")] }
-        if options.stripMetadata || !options.preserveMetadata { args += ["-map_metadata", "-1"] }
-        if !options.author.isEmpty { args += ["-metadata", "artist=\(options.author)"] }
-        if !options.title.isEmpty { args += ["-metadata", "title=\(options.title)"] }
+        var outputAudioFilters = audioFilters
+        if ["wma", "wmv"].contains(ext) {
+            // wmav2 doesn't advertise its rate and channel limits to ffmpeg's automatic negotiation
+            outputAudioFilters.append("aformat=sample_rates=48000|44100:channel_layouts=mono|stereo")
+        }
+        if !outputAudioFilters.isEmpty { args += ["-af", outputAudioFilters.joined(separator: ",")] }
+        args += try metadataArguments(options)
         switch ext {
         case "mp3": args += ["-vn", "-c:a", "libmp3lame", "-b:a", bitrate(options)]
         case "m4a": args += ["-vn", "-c:a", "aac", "-b:a", bitrate(options)]
@@ -21,17 +24,22 @@ enum MediaEngine {
         case "flac": args += ["-vn", "-c:a", "flac"]
         case "ogg": args += ["-vn", "-c:a", "libvorbis", "-q:a", "5"]
         case "opus": args += ["-vn", "-c:a", "libopus", "-b:a", bitrate(options)]
+        case "wma": args += ["-vn", "-c:a", "wmav2", "-b:a", bitrate(options)]
         case "mp4", "mov", "mkv":
             args += ["-c:v", "h264_videotoolbox", "-b:v", "\(Int(1_000_000 + options.quality * 7_000_000))", "-pix_fmt", "yuv420p", "-c:a", "aac"]
             if ext != "mkv" { args += ["-movflags", "+faststart"] }
         case "webm": args += ["-c:v", "libvpx-vp9", "-crf", "\(Int(45 - options.quality * 20))", "-b:v", "0", "-c:a", "libopus"]
+        // use container-compatible legacy codecs already included in the bundled runtime
+        case "avi", "wmv":
+            args += ["-c:v", ext == "avi" ? "mpeg4" : "wmv2", "-q:v", "\(Int(31 - min(1, max(0, options.quality)) * 29))",
+                     "-pix_fmt", "yuv420p", "-c:a", ext == "avi" ? "libmp3lame" : "wmav2", "-b:a", bitrate(options)]
         case "webp": args += ["-frames:v", "1", "-c:v", "libwebp", "-quality", "\(Int(options.quality * 100))"]
         case "avif": args += ["-frames:v", "1", "-c:v", "libaom-av1", "-still-picture", "1", "-crf", "\(Int(50 - options.quality * 35))"]
         case "heic": args += ["-frames:v", "1", "-c:v", "hevc_videotoolbox"]
         case "gif":
             // a split filter generates the palette from the actual clip
             args += ["-an"]
-        case "png", "jpg", "tiff": args += ["-frames:v", "1"]
+        case "png", "jpg", "tiff", "bmp": args += ["-frames:v", "1"]
         default: throw FileelError.message("No media encoder for \(ext.uppercased()).")
         }
         if family == .image && ext != "gif" { args += ["-frames:v", "1"] }
@@ -40,6 +48,30 @@ enum MediaEngine {
     }
 
     static func bitrate(_ options: OperationOptions) -> String { "\(Int(64 + options.quality * 192))k" }
+
+    // disable stream and chapter tag copying too, since global tags are only part of a container's metadata
+    static func metadataArguments(_ options: OperationOptions) throws -> [String] {
+        var args: [String] = []
+        if options.stripMetadata || !options.preserveMetadata {
+            args += ["-map_metadata", "-1", "-map_metadata:s", "-1", "-map_chapters", "-1"]
+        }
+        if !options.author.isEmpty { args += ["-metadata", "artist=\(options.author)"] }
+        if !options.title.isEmpty { args += ["-metadata", "title=\(options.title)"] }
+        if options.removeLocation {
+            args += ["-metadata", "location=", "-metadata", "com.apple.quicktime.location.ISO6709="]
+        }
+        if !options.latitude.isEmpty || !options.longitude.isEmpty {
+            guard let latitude = Double(options.latitude), let longitude = Double(options.longitude),
+                  latitude.isFinite, longitude.isFinite, (-90...90).contains(latitude), (-180...180).contains(longitude) else {
+                throw FileelError.message("Enter latitude from −90 to 90 and longitude from −180 to 180.")
+            }
+            let location = String(format: "%+.6f%+.6f/", locale: Locale(identifier: "en_US_POSIX"), latitude, longitude)
+            args += ["-metadata", "location=\(location)", "-metadata", "com.apple.quicktime.location.ISO6709=\(location)"]
+        }
+        if !options.cameraMake.isEmpty { args += ["-metadata", "make=\(options.cameraMake)"] }
+        if !options.cameraModel.isEmpty { args += ["-metadata", "model=\(options.cameraModel)"] }
+        return args
+    }
 
     static func duration(_ input: URL, runner: ProcessRunner) throws -> Double {
         let text = try runner.run(Engines.require("ffprobe"), ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", input.path])
@@ -55,20 +87,7 @@ enum MediaEngine {
             try encode(input, output: output, options: options, runner: runner)
         case .metadata:
             // remux metadata edits so the audio and video streams keep their original encoded bytes
-            var args = ["-v", "error", "-nostdin", "-y", "-i", input.path, "-map", "0", "-c", "copy",
-                        "-map_metadata", options.stripMetadata ? "-1" : "0"]
-            if !options.author.isEmpty { args += ["-metadata", "artist=\(options.author)"] }
-            if !options.title.isEmpty { args += ["-metadata", "title=\(options.title)"] }
-            if options.removeLocation {
-                args += ["-metadata", "location=", "-metadata", "com.apple.quicktime.location.ISO6709="]
-            }
-            if !options.latitude.isEmpty, !options.longitude.isEmpty,
-               let latitude = Double(options.latitude), let longitude = Double(options.longitude) {
-                let location = String(format: "%+.6f%+.6f/", latitude, longitude)
-                args += ["-metadata", "location=\(location)", "-metadata", "com.apple.quicktime.location.ISO6709=\(location)"]
-            }
-            if !options.cameraMake.isEmpty { args += ["-metadata", "make=\(options.cameraMake)"] }
-            if !options.cameraModel.isEmpty { args += ["-metadata", "model=\(options.cameraModel)"] }
+            let args = ["-v", "error", "-nostdin", "-y", "-i", input.path, "-map", "0", "-c", "copy"] + (try metadataArguments(options))
             try runner.run(Engines.require("ffmpeg"), args + [output.path])
         case .resize:
             guard options.width > 0 || options.height > 0 else { throw FileelError.message("Enter at least one output dimension.") }
@@ -125,9 +144,7 @@ enum MediaEngine {
             try encode(input, output: output, options: options, runner: runner,
                        filters: ["drawbox=x=\(options.x):y=\(options.y):w=\(options.width):h=\(options.height):color=black:t=fill:enable='between(t,\(options.start),\(options.end))'"])
         case .bleep:
-            guard options.start >= 0, options.end > options.start else { throw FileelError.message("Enter the time range to replace.") }
-            let filter = "[0:a]volume=0:enable='between(t,\(options.start),\(options.end))'[base];sine=frequency=1000:sample_rate=48000,volume=0.15,atrim=duration=\(options.end - options.start),adelay=\(Int(options.start * 1000)):all=1[tone];[base][tone]amix=inputs=2:duration=first:normalize=0[out]"
-            try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-i", input.path, "-filter_complex", filter, "-map", "[out]", output.path])
+            try BleepEngine.process(input, output: output, options: options, runner: runner)
         case .snapshots:
             try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-ss", String(max(0, options.start)), "-i", input.path, "-frames:v", "1", output.path])
         case .visualizer:
@@ -158,18 +175,7 @@ enum MediaEngine {
     }
 
     static func join(_ inputs: [URL], output: URL, options: OperationOptions, runner: ProcessRunner) throws {
-        // normalize clips before concatenation so mixed codecs and dimensions can be joined
-        var normalized: [URL] = []
-        for (index, input) in inputs.enumerated() {
-            let clip = output.deletingLastPathComponent().appendingPathComponent("join-\(index).mp4")
-            try encode(input, output: clip, options: options, runner: runner,
-                       filters: ["scale=1280:720:force_original_aspect_ratio=decrease", "pad=1280:720:(ow-iw)/2:(oh-ih)/2", "setsar=1", "fps=30"],
-                       extra: ["-ar", "48000", "-ac", "2"])
-            normalized.append(clip)
-        }
-        let list = output.deletingLastPathComponent().appendingPathComponent("clips.txt")
-        try normalized.map { "file '\($0.lastPathComponent)'" }.joined(separator: "\n").write(to: list, atomically: true, encoding: .utf8)
-        try runner.run(Engines.require("ffmpeg"), ["-v", "error", "-nostdin", "-y", "-f", "concat", "-safe", "1", "-i", list.path, "-c", "copy", output.path])
+        try VideoJoinEngine.join(inputs, output: output, options: options, runner: runner)
     }
 
     static func joinAudio(_ inputs: [URL], output: URL, options: OperationOptions, runner: ProcessRunner) throws {
