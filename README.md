@@ -17,8 +17,6 @@ https://github.com/user-attachments/assets/6b31c486-85f5-4b25-9001-1300ad8d5c84
   <a href="https://github.com/thiagonarcizo/Fileel/issues">Feedback</a>
 </p>
 
-> **The first public release is being prepared.** Downloads will appear in [GitHub Releases](https://github.com/thiagonarcizo/Fileel/releases) after installation and update testing is complete.
-
 ## One drag. Three shortcuts.
 
 Pick up a file in Finder and hold a key. Fileel brings the next action to your pointer.
@@ -56,7 +54,7 @@ See the [format and acceptance checklist](docs/COVERAGE.md) for the detailed sco
 
 Fileel targets **Apple silicon** and **macOS 14 or later**. Native Liquid Glass is available on macOS 26 and later, with native materials on earlier systems.
 
-Once available, open the DMG from [Download](https://github.com/thiagonarcizo/Fileel/releases), drag Fileel into Applications, and launch it. Permission guidance appears during onboarding.
+Open the DMG from [Download](https://github.com/thiagonarcizo/Fileel/releases), drag Fileel into Applications, and launch it. Permission guidance appears during onboarding.
 
 Fileel includes **Check for Updates** and automatic update checks. Stable and beta have separate update feeds; choose a channel in Settings → About. Leaving beta stops beta updates immediately and keeps your current installation until a newer stable build is available. Your preferences stay with you.
 
