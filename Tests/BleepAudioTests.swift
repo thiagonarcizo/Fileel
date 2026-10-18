@@ -101,7 +101,8 @@ final class BleepAudioTests: XCTestCase {
         options.usesBleepRanges = true
         XCTAssertNotNil(OperationRequirements.issue(for: .tool(.bleep), inputs: [input], options: options))
         for ranges: [AudioRedactionRange] in [[], [.init(start: .nan, end: 1)], [.init(start: 0, end: .infinity)],
-                                            [.init(start: -1, end: 0.5)], [.init(start: 1, end: 0.5)], [.init(start: 0, end: 2)]] {
+                                            [.init(start: -1, end: 0.5)], [.init(start: 1, end: 0.5)], [.init(start: 0, end: 2)],
+                                            [.init(start: 1.4, end: 1.4000005)]] {
             options.bleepRanges = ranges
             XCTAssertThrowsError(try MediaEngine.process(input, tool: .bleep, output: output, options: options, runner: ProcessRunner()))
             XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))

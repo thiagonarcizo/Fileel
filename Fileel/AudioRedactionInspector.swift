@@ -49,6 +49,7 @@ struct AudioRedactionInspector: View {
                         Button("Set In at Playhead") { options.start = min(max(0, playhead), max(0, options.end - 0.05)) }.controlSize(.small)
                         timeField("Out", value: $options.end)
                         Button("Set Out at Playhead") { options.end = min(duration, max(options.start + 0.05, playhead)) }.controlSize(.small)
+                        Button("Use Entire Clip") { options.start = 0; options.end = duration }.controlSize(.small)
                         Text("Drag the waveform handles to refine this range.").font(.caption).foregroundStyle(.secondary)
                     }
                 } else {
@@ -56,6 +57,7 @@ struct AudioRedactionInspector: View {
                 }
             }.padding(22)
         }
+        .onAppear { options.usesBleepRanges = true }
         .onChange(of: options.bleepRanges.map(\.id), initial: true) { _, ids in
             if selected == nil || !ids.contains(selected!) {
                 if let first = options.bleepRanges.first { select(first) }

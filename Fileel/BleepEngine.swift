@@ -15,7 +15,7 @@ enum BleepEngine {
     // overlapping selections form one continuous replacement rather than adding multiple tones together
     static func normalized(_ ranges: [AudioRedactionRange], duration: Double) throws -> [AudioRedactionRange] {
         guard duration.isFinite, duration > 0, !ranges.isEmpty, ranges.count <= maximumRanges,
-              ranges.allSatisfy({ $0.start.isFinite && $0.end.isFinite && $0.start >= 0 && $0.end > $0.start && $0.end <= duration + 0.000001 }) else {
+              ranges.allSatisfy({ $0.start.isFinite && $0.end.isFinite && $0.start >= 0 && $0.start < duration && $0.end > $0.start && $0.end <= duration + 0.000001 }) else {
             throw FileelError.message("Choose valid bleep ranges within the recording, up to \(maximumRanges) selections.")
         }
         var result: [AudioRedactionRange] = []
@@ -37,7 +37,7 @@ enum BleepEngine {
         let masks = ranges.map { "between(t,\(number($0.start)),\(number($0.end)))" }
         let tones = ranges.enumerated().map { index, range -> String in
             let start = number(range.start), end = number(range.end)
-            let fade = number(min(0.005, (range.end - range.start) / 2))
+            let fade = number(max(0.000000001, min(0.005, (range.end - range.start) / 2)))
             return "if(\(masks[index]),0.15*sin(2*PI*1000*(t-\(start)))*min(1,min((t-\(start))/\(fade),(\(end)-t)/\(fade))),0)"
         }
         // aeval runs per sample; a frame-level volume enable can leave the start of a word audible

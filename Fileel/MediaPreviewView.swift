@@ -210,7 +210,6 @@ struct MediaPreviewView: View {
         if operation == .tool(.bleep) {
             if !options.usesBleepRanges {
                 options.usesBleepRanges = true
-                options.bleepRanges = [AudioRedactionRange(start: 0, end: min(1, media.duration))]
             }
             if let first = options.bleepRanges.first { options.start = first.start; options.end = first.end }
         } else if editsRange { options.start = 0; options.end = media.duration }
