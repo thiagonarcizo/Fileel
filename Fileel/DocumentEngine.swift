@@ -53,11 +53,11 @@ enum DocumentEngine {
                     }
                 }
             }
-            let text = try PDFEngine.text(input, runner: runner)
             if format == "xlsx" {
-                try OfficePackage.workbook(text: text, output: output, runner: runner)
+                try PDFSpreadsheetEngine.convert(input, output: output, runner: runner)
                 return output
             }
+            let text = try PDFEngine.text(input, runner: runner)
             if ["txt", "md"].contains(format) {
                 try text.write(to: output, atomically: true, encoding: .utf8)
                 return output
@@ -68,9 +68,16 @@ enum DocumentEngine {
                 let docx = try convert(textFile, format: "docx", folder: folder, options: options, runner: runner)
                 try pages(docx, output: output)
             } else {
-                try pandoc(textFile, output: output, runner: runner)
+                return try pandoc(textFile, output: output, runner: runner)
             }
             return output
+        }
+        if ["rtfd", "textclipping"].contains(sourceFormat) {
+            let temporary = folder.appendingPathComponent("native-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: temporary) }
+            try runner.checkCancellation()
+            let normalized = try NativeDocumentInput.normalize(input, workspace: temporary, runner: runner)
+            return try convert(normalized, format: format, folder: folder, options: options, runner: runner)
         }
         if ["jpg", "png"].contains(format) {
             let pdf = try convert(input, format: "pdf", folder: folder, options: options, runner: runner)
@@ -83,18 +90,10 @@ enum DocumentEngine {
             try pages(docx, output: output)
             return output
         }
-        if sourceFormat == "textclipping" {
-            guard let pasteboard = NSPasteboard(name: .init(input.path)) as NSPasteboard?,
-                  let text = pasteboard.string(forType: .string) else { throw FileelError.message("Cannot read this Finder text clipping.") }
-            let txt = folder.appendingPathComponent("clipping.txt")
-            try text.write(to: txt, atomically: true, encoding: .utf8)
-            return try convert(txt, format: format, folder: folder, options: options, runner: runner)
-        }
         if ["pages", "rtf", "rtfd"].contains(sourceFormat), ["md", "epub", "txt", "html"].contains(format) {
             let docx = folder.appendingPathComponent("rich-text-source.docx")
             try office(input, format: "docx", output: docx, runner: runner)
-            try pandoc(docx, output: output, runner: runner)
-            return output
+            return try pandoc(docx, output: output, runner: runner)
         }
         if family == .spreadsheet || family == .presentation || ["pdf", "pages", "rtf", "rtfd"].contains(sourceFormat) || format == "pdf" {
             // pandoc first turns Markdown and EPUB into a document that the office engine can render
@@ -109,24 +108,70 @@ enum DocumentEngine {
         if sourceFormat == format {
             try FileManager.default.copyItem(at: input, to: output)
         } else {
-            try pandoc(input, output: output, runner: runner)
+            return try pandoc(input, output: output, runner: runner)
         }
         return output
     }
 
-    static func pandoc(_ input: URL, output: URL, runner: ProcessRunner) throws {
+    @discardableResult
+    static func pandoc(_ input: URL, output: URL, runner: ProcessRunner) throws -> URL {
         let reflow = output.deletingLastPathComponent().appendingPathComponent("reflow-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: reflow) }
         let readable = try DocxTextBoxes.normalized(input, workspace: reflow, runner: runner)
-        var args = [readable.path, "--standalone", "--output", output.path]
+        let package = output.pathExtension == "md" ? output.deletingPathExtension() : nil
+        var createdPackage = false
+        var retainPackage = false
+        defer { if let package, createdPackage, !retainPackage { try? FileManager.default.removeItem(at: package) } }
+        var destination = output
+        if let package {
+            guard !FileManager.default.fileExists(atPath: package.path) else { throw FileelError.message("The Markdown export folder already exists.") }
+            try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            createdPackage = true
+            destination = package.appendingPathComponent(output.lastPathComponent)
+        }
+        var args = [readable.path, "--standalone", "--output", destination.path]
         let ext = input.pathExtension.lowercased()
         if ext == "txt" { args += ["--from", "markdown"] }
         if output.pathExtension == "txt" { args += ["--to", "plain"] }
-        if output.pathExtension == "md" { args += ["--to", "gfm"] }
+        if output.pathExtension == "md" {
+            // image sizing attributes force raw HTML, which word readers cannot import back as pictures
+            try FileManager.default.createDirectory(at: reflow, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            let filter = reflow.appendingPathComponent("markdown-images.lua")
+            let script = """
+            function Image(image)
+              image.attr = pandoc.Attr()
+              return image
+            end
+
+            function Figure(figure)
+              -- keep captions visible without an HTML figure wrapper
+              local blocks = figure.content
+              if figure.caption and figure.caption.long then
+                blocks:extend(figure.caption.long)
+              end
+              return blocks
+            end
+            """
+            try script.write(to: filter, atomically: true, encoding: .utf8)
+            args += ["--to", "gfm", "--extract-media=assets", "--lua-filter", filter.path]
+        }
         if output.pathExtension == "html" { args += ["--embed-resources"] }
-        // resource paths stay local and no conversion calls a remote service
+        // look up linked resources beside the original document
         args += ["--resource-path", input.deletingLastPathComponent().path]
-        try runner.run(Engines.require("pandoc"), args)
+        try runner.run(Engines.require("pandoc"), args, directory: package)
+        try runner.checkCancellation()
+        if let package {
+            // publish the whole folder when images exist so every relative link survives the transaction cleanup
+            let assets = package.appendingPathComponent("assets")
+            let items = FileManager.default.enumerator(at: assets, includingPropertiesForKeys: [.isRegularFileKey])
+            var hasMedia = false
+            while let item = items?.nextObject() as? URL {
+                if try item.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true { hasMedia = true; break }
+            }
+            if hasMedia { retainPackage = true; return package }
+            try FileManager.default.moveItem(at: destination, to: output)
+        }
+        return output
     }
 
     static func office(_ input: URL, format: String, output: URL, runner: ProcessRunner, inputFilter: String? = nil) throws {
@@ -187,20 +232,6 @@ enum OfficePackage {
 
     static func pack(_ root: URL, output: URL, runner: ProcessRunner) throws {
         try runner.run(URL(fileURLWithPath: "/usr/bin/ditto"), ["-c", "-k", "--norsrc", "--noextattr", root.path, output.path])
-    }
-
-    static func workbook(text: String, output: URL, runner: ProcessRunner) throws {
-        let root = output.deletingLastPathComponent().appendingPathComponent("xlsx-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: root) }
-        try xml("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/></Types>", at: "[Content_Types].xml", root: root)
-        try xml("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>", at: "_rels/.rels", root: root)
-        try xml("<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"PDF Text\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>", at: "xl/workbook.xml", root: root)
-        try xml("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>", at: "xl/_rels/workbook.xml.rels", root: root)
-        let rows = text.components(separatedBy: .newlines).enumerated().map { index, line in
-            "<row r=\"\(index + 1)\"><c r=\"A\(index + 1)\" t=\"inlineStr\"><is><t xml:space=\"preserve\">\(escape(line))</t></is></c></row>"
-        }.joined()
-        try xml("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>\(rows)</sheetData></worksheet>", at: "xl/worksheets/sheet1.xml", root: root)
-        try pack(root, output: output, runner: runner)
     }
 
     static func slides(from input: URL, output: URL, runner: ProcessRunner) throws {

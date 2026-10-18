@@ -103,6 +103,56 @@ enum PDFEngine {
         try save(document, to: output)
     }
 
+    // a fresh catalog is needed because clearing document attributes alone leaves the original XMP stream intact
+    static func updatingMetadata(_ document: PDFDocument, options: OperationOptions, runner: ProcessRunner) throws -> PDFDocument {
+        let result: PDFDocument
+        if options.stripMetadata || !options.preserveMetadata {
+            result = PDFDocument()
+            for index in 0..<document.pageCount {
+                try runner.checkCancellation()
+                guard let page = document.page(at: index)?.copy() as? PDFPage else { throw FileelError.message("A PDF page could not be copied.") }
+                result.insert(page, at: index)
+            }
+
+            // page destinations must reference the copied pages rather than the source document
+            func destination(_ value: PDFDestination) -> PDFDestination? {
+                guard let oldPage = value.page, let newPage = result.page(at: document.index(for: oldPage)) else { return nil }
+                let mapped = PDFDestination(page: newPage, at: value.point)
+                mapped.zoom = value.zoom
+                return mapped
+            }
+            func action(_ value: PDFAction?) -> PDFAction? {
+                if let goTo = value as? PDFActionGoTo {
+                    return destination(goTo.destination).map { PDFActionGoTo(destination: $0) }
+                }
+                return value?.copy() as? PDFAction
+            }
+            func outline(_ node: PDFOutline) throws -> PDFOutline {
+                try runner.checkCancellation()
+                let copy = PDFOutline()
+                copy.label = node.label
+                for index in 0..<node.numberOfChildren {
+                    if let child = node.child(at: index) { copy.insertChild(try outline(child), at: copy.numberOfChildren) }
+                }
+                copy.isOpen = node.isOpen
+                if let originalAction = node.action { copy.action = action(originalAction) }
+                else if let originalDestination = node.destination { copy.destination = destination(originalDestination) }
+                return copy
+            }
+            if let root = document.outlineRoot { result.outlineRoot = try outline(root) }
+            for index in 0..<result.pageCount {
+                let sourceAnnotations = document.page(at: index)?.annotations ?? []
+                let copiedAnnotations = result.page(at: index)?.annotations ?? []
+                for (source, copy) in zip(sourceAnnotations, copiedAnnotations) { copy.action = action(source.action) }
+            }
+        } else { result = document }
+        var attributes = options.preserveMetadata && !options.stripMetadata ? document.documentAttributes ?? [:] : [:]
+        if !options.author.isEmpty { attributes[PDFDocumentAttribute.authorAttribute] = options.author }
+        if !options.title.isEmpty { attributes[PDFDocumentAttribute.titleAttribute] = options.title }
+        result.documentAttributes = attributes
+        return result
+    }
+
     static func process(_ input: URL, tool: FileTool, output: URL, options: OperationOptions, runner: ProcessRunner) throws {
         let document = try load(input)
         if tool == .splitPDF {
@@ -136,13 +186,9 @@ enum PDFEngine {
             }
             try save(result, to: output)
         } else if tool == .metadata {
-            var attributes = options.stripMetadata ? [:] : document.documentAttributes ?? [:]
-            if !options.author.isEmpty { attributes[PDFDocumentAttribute.authorAttribute] = options.author }
-            if !options.title.isEmpty { attributes[PDFDocumentAttribute.titleAttribute] = options.title }
-            document.documentAttributes = attributes
-            try save(document, to: output)
+            try save(updatingMetadata(document, options: options, runner: runner), to: output)
         } else if tool == .compress {
-            try PDFCompressionEngine.compress(input, output: output, reduction: options.compressionReduction, runner: runner)
+            try PDFCompressionEngine.compress(input, output: output, reduction: options.compressionReduction, runner: runner, options: options)
         }
     }
 }

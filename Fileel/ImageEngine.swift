@@ -98,6 +98,25 @@ enum ImageEngine {
         guard CGImageDestinationFinalize(destination) else { throw FileelError.message("The \(url.pathExtension.uppercased()) encoder could not finish the file.") }
     }
 
+    // replace descriptive metadata without recompressing supported single-frame images
+    static func copyWithoutMetadata(_ input: URL, to output: URL) -> Bool {
+        guard let source = CGImageSourceCreateWithURL(input as CFURL, nil), CGImageSourceGetCount(source) == 1,
+              let type = CGImageSourceGetType(source),
+              let destination = CGImageDestinationCreateWithURL(output as CFURL, type, 1, nil) else { return false }
+        let metadata = CGImageMetadataCreateMutable()
+        if let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+           let orientation = properties[kCGImagePropertyOrientation] as? NSNumber {
+            // orientation describes the encoded pixels and must survive removal of camera and location tags
+            guard CGImageMetadataSetValueMatchingImageProperty(metadata, kCGImagePropertyTIFFDictionary,
+                kCGImagePropertyTIFFOrientation, orientation) else { return false }
+        }
+        let settings: [CFString: Any] = [kCGImageDestinationMetadata: metadata,
+            kCGImageDestinationMergeMetadata: false, kCGImageMetadataShouldExcludeGPS: true]
+        let copied = CGImageDestinationCopyImageSource(destination, source, settings as CFDictionary, nil)
+        if !copied { try? FileManager.default.removeItem(at: output) }
+        return copied
+    }
+
     static func supports(_ ext: String) -> Bool {
         guard let type = UTType(filenameExtension: ext) else { return false }
         return (CGImageDestinationCopyTypeIdentifiers() as! [String]).contains(type.identifier)
