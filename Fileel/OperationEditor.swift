@@ -34,7 +34,7 @@ final class OperationWindowController: NSWindowController, NSWindowDelegate {
 }
 
 private struct OperationEditor: View {
-    let files: [URL]
+    @State private var files: [URL]
     let operation: FileOperation
     let onFinished: () -> Void
     @ObservedObject private var jobs = AppModel.shared
@@ -53,7 +53,7 @@ private struct OperationEditor: View {
     @State private var clipboardTask: Task<Void, Never>?
     @State private var pdfCalculating = true
     init(files: [URL], operation: FileOperation, onFinished: @escaping () -> Void) {
-        self.files = files
+        _files = State(initialValue: files)
         self.operation = operation
         self.onFinished = onFinished
         _options = State(initialValue: AppModel.shared.defaults())
@@ -97,6 +97,9 @@ private struct OperationEditor: View {
                 PDFOrganizerView(url: files[0], options: $options)
             } else if operation == .tool(.compress) {
                 CompressionEditor(files: files, options: $options, onCalculating: { pdfCalculating = $0 })
+            } else if operation == .tool(.joinVideos) || operation == .tool(.joinAudio) {
+                MediaJoinEditor(files: $files, operation: operation, options: $options)
+                    .disabled(jobs.busy).allowsHitTesting(!jobs.busy)
             } else {
             HSplitView {
                 Group {
