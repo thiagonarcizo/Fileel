@@ -8,16 +8,15 @@ struct PDFPageEdit: Identifiable, Hashable, Sendable {
 }
 
 enum PDFPageLayout {
-    static func moving(_ pages: [PDFPageEdit], ids: Set<UUID>, over target: UUID?) -> [PDFPageEdit] {
-        guard !ids.isEmpty, let first = pages.firstIndex(where: { ids.contains($0.id) }) else { return pages }
-        if let target, ids.contains(target) { return pages }
+    // appkit reports a gap before an item, so remove the dragged pages before adjusting that gap
+    static func inserting(_ pages: [PDFPageEdit], ids: Set<UUID>, before index: Int) -> [PDFPageEdit] {
+        guard (0...pages.count).contains(index), !ids.isEmpty else { return pages }
         let moving = pages.filter { ids.contains($0.id) }
+        guard !moving.isEmpty else { return pages }
         var result = pages.filter { !ids.contains($0.id) }
-        let insertion: Int
-        if let target, let originalTarget = pages.firstIndex(where: { $0.id == target }), let remainingTarget = result.firstIndex(where: { $0.id == target }) {
-            insertion = remainingTarget + (first < originalTarget ? 1 : 0)
-        } else { insertion = result.count }
-        result.insert(contentsOf: moving, at: insertion)
+        let removedBefore = pages.prefix(index).filter { ids.contains($0.id) }.count
+        result.insert(contentsOf: moving, at: index - removedBefore)
         return result
     }
+
 }

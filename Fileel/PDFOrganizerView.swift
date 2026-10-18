@@ -1,7 +1,6 @@
 import AppKit
 import PDFKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 // serialize pdfkit access and render thumbnails only for cards that enter the visible grid
 actor PDFThumbnailRenderer {
@@ -29,8 +28,6 @@ struct PDFOrganizerView: View {
     let url: URL
     @Binding var options: OperationOptions
     @State private var selected: Set<UUID> = []
-    @State private var anchor: UUID?
-    @State private var dragging: Set<UUID> = []
     @State private var error: String?
     @State private var ready = false
     @State private var undoStack: [[PDFPageEdit]] = []
@@ -38,8 +35,6 @@ struct PDFOrganizerView: View {
     @State private var restoring = false
     @State private var initializing = false
     @State private var renderer = PDFThumbnailRenderer()
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private static let dragType = UTType(exportedAs: "xyz.narcizo.fileel.pdf-page")
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,31 +59,9 @@ struct PDFOrganizerView: View {
             if let error { ContentUnavailableView("Pages Unavailable", systemImage: "doc", description: Text(error)) }
             else if !ready { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
             else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 172, maximum: 220), spacing: 24)], spacing: 26) {
-                        ForEach(Array(options.pdfPages.enumerated()), id: \.element.id) { index, edit in
-                            PDFPageCard(url: url, edit: edit, position: index + 1, selected: selected.contains(edit.id), renderer: renderer)
-                                .onTapGesture { select(edit.id) }
-                                .onDrag {
-                                    if !selected.contains(edit.id) { selected = [edit.id] }
-                                    dragging = selected
-                                    let provider = NSItemProvider()
-                                    provider.registerDataRepresentation(forTypeIdentifier: Self.dragType.identifier, visibility: .ownProcess) { completion in
-                                        completion(Data(edit.id.uuidString.utf8), nil); return nil
-                                    }
-                                    return provider
-                                }
-                                .onDrop(of: [Self.dragType], delegate: PDFPageDropDelegate(target: edit.id, pages: $options.pdfPages, dragging: $dragging, reduceMotion: reduceMotion))
-                                .contextMenu {
-                                    Button("Rotate Left") { selected = [edit.id]; rotate(-90) }
-                                    Button("Rotate Right") { selected = [edit.id]; rotate(90) }
-                                    Button("Duplicate") { selected = [edit.id]; duplicate() }
-                                    Button("Remove") { selected = [edit.id]; remove() }
-                                }
-                        }
-                        Color.clear.frame(height: 60).onDrop(of: [Self.dragType], delegate: PDFPageDropDelegate(target: nil, pages: $options.pdfPages, dragging: $dragging, reduceMotion: reduceMotion))
-                    }.padding(28)
-                }.background(Color(nsColor: .underPageBackgroundColor))
+                PDFPageGrid(url: url, pages: $options.pdfPages, selection: $selected, renderer: renderer,
+                            onRotate: rotate, onDuplicate: duplicate, onRemove: remove)
+                    .background(Color(nsColor: .underPageBackgroundColor))
             }
             Divider()
             Text("Drag pages to reorder · ⌘-click to select more · Shift-click to select a range")
@@ -110,14 +83,6 @@ struct PDFOrganizerView: View {
         }
     }
 
-    private func select(_ id: UUID) {
-        if NSEvent.modifierFlags.contains(.shift), let anchor, let first = options.pdfPages.firstIndex(where: { $0.id == anchor }), let last = options.pdfPages.firstIndex(where: { $0.id == id }) {
-            selected = Set(options.pdfPages[min(first, last)...max(first, last)].map(\.id))
-        } else if NSEvent.modifierFlags.contains(.command) {
-            if selected.contains(id) { selected.remove(id) } else { selected.insert(id) }
-            anchor = id
-        } else { selected = [id]; anchor = id }
-    }
     private func rotate(_ degrees: Int) {
         options.pdfPages = options.pdfPages.map { page in
             var page = page
@@ -175,16 +140,208 @@ private struct PDFPageCard: View {
     }
 }
 
-private struct PDFPageDropDelegate: DropDelegate {
-    let target: UUID?
+// appkit owns selection and drag sessions so thumbnail clicks cannot swallow a page drag
+private struct PDFPageGrid: NSViewRepresentable {
+    let url: URL
     @Binding var pages: [PDFPageEdit]
-    @Binding var dragging: Set<UUID>
-    let reduceMotion: Bool
-    func validateDrop(info: DropInfo) -> Bool { !dragging.isEmpty }
-    func dropEntered(info: DropInfo) {
-        guard !dragging.isEmpty else { return }
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.16)) { pages = PDFPageLayout.moving(pages, ids: dragging, over: target) }
+    @Binding var selection: Set<UUID>
+    let renderer: PDFThumbnailRenderer
+    let onRotate: (Int) -> Void
+    let onDuplicate: () -> Void
+    let onRemove: () -> Void
+    private static let pasteboardType = NSPasteboard.PasteboardType("xyz.narcizo.fileel.pdf-page")
+    private static let itemID = NSUserInterfaceItemIdentifier("PDFPageCard")
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let collection = PageCollectionView()
+        let layout = NSCollectionViewFlowLayout()
+        layout.minimumInteritemSpacing = 24
+        layout.minimumLineSpacing = 26
+        layout.sectionInset = NSEdgeInsets(top: 28, left: 28, bottom: 28, right: 28)
+        collection.collectionViewLayout = layout
+        collection.isSelectable = true
+        collection.allowsMultipleSelection = true
+        collection.backgroundColors = [.clear]
+        collection.register(PageCollectionItem.self, forItemWithIdentifier: Self.itemID)
+        collection.registerForDraggedTypes([Self.pasteboardType])
+        collection.setDraggingSourceOperationMask(.move, forLocal: true)
+        collection.setDraggingSourceOperationMask([], forLocal: false)
+        collection.dataSource = context.coordinator
+        collection.delegate = context.coordinator
+        collection.menuProvider = { [weak coordinator = context.coordinator] index in coordinator?.menu(at: index) }
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.documentView = collection
+        collection.frame = scroll.contentView.bounds
+        collection.autoresizingMask = [.width, .height]
+        context.coordinator.collection = collection
+        return scroll
     }
-    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
-    func performDrop(info: DropInfo) -> Bool { dragging = []; return true }
+
+    func updateNSView(_ scroll: NSScrollView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        guard let collection = coordinator.collection else { return }
+        coordinator.updating = true
+        if coordinator.renderedPages != pages {
+            coordinator.renderedPages = pages
+            collection.reloadData()
+        }
+        collection.selectionIndexPaths = Set(pages.enumerated().compactMap {
+            selection.contains($0.element.id) ? IndexPath(item: $0.offset, section: 0) : nil
+        })
+        coordinator.updating = false
+    }
+
+    final class Coordinator: NSObject, NSCollectionViewDataSource, NSCollectionViewDelegate {
+        var parent: PDFPageGrid
+        weak var collection: PageCollectionView?
+        var renderedPages: [PDFPageEdit] = []
+        var updating = false
+        private var dragging: Set<UUID> = []
+
+        init(_ parent: PDFPageGrid) { self.parent = parent }
+        func collectionView(_ collectionView: NSCollectionView, numberOfItemsInSection section: Int) -> Int { parent.pages.count }
+        func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
+            let item = collectionView.makeItem(withIdentifier: PDFPageGrid.itemID, for: indexPath) as! PageCollectionItem
+            item.configure(url: parent.url, edit: parent.pages[indexPath.item], position: indexPath.item + 1, renderer: parent.renderer)
+            return item
+        }
+
+        func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) { syncSelection() }
+        func collectionView(_ collectionView: NSCollectionView, didDeselectItemsAt indexPaths: Set<IndexPath>) { syncSelection() }
+        private func syncSelection() {
+            guard !updating, let collection else { return }
+            parent.selection = Set(collection.selectionIndexPaths.compactMap { index in
+                parent.pages.indices.contains(index.item) ? parent.pages[index.item].id : nil
+            })
+        }
+
+        func collectionView(_ collectionView: NSCollectionView, pasteboardWriterForItemAt indexPath: IndexPath) -> (any NSPasteboardWriting)? {
+            let item = NSPasteboardItem()
+            item.setString(parent.pages[indexPath.item].id.uuidString, forType: PDFPageGrid.pasteboardType)
+            return item
+        }
+        func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession, willBeginAt screenPoint: NSPoint, forItemsAt indexPaths: Set<IndexPath>) {
+            dragging = Set(indexPaths.map { parent.pages[$0.item].id })
+        }
+        func collectionView(_ collectionView: NSCollectionView, draggingSession session: NSDraggingSession, endedAt screenPoint: NSPoint, dragOperation operation: NSDragOperation) {
+            // cancelled and outside drops must not leave a selection armed for the next drag
+            dragging = []
+        }
+        func collectionView(_ collectionView: NSCollectionView, validateDrop draggingInfo: any NSDraggingInfo, proposedIndexPath proposedDropIndexPath: AutoreleasingUnsafeMutablePointer<NSIndexPath>, dropOperation proposedDropOperation: UnsafeMutablePointer<NSCollectionView.DropOperation>) -> NSDragOperation {
+            guard let source = draggingInfo.draggingSource as? NSCollectionView, source === collectionView, !dragging.isEmpty else { return [] }
+            proposedDropOperation.pointee = .before
+            return .move
+        }
+        func collectionView(_ collectionView: NSCollectionView, acceptDrop draggingInfo: any NSDraggingInfo, indexPath: IndexPath, dropOperation: NSCollectionView.DropOperation) -> Bool {
+            guard let source = draggingInfo.draggingSource as? NSCollectionView, source === collectionView, !dragging.isEmpty,
+                  (0...parent.pages.count).contains(indexPath.item) else { return false }
+            // commit once on drop so undo restores the whole move in one step
+            parent.pages = PDFPageLayout.inserting(parent.pages, ids: dragging, before: indexPath.item)
+            return true
+        }
+
+        func menu(at index: IndexPath) -> NSMenu {
+            if let collection, !collection.selectionIndexPaths.contains(index) {
+                collection.selectionIndexPaths = [index]
+                syncSelection()
+            }
+            let menu = NSMenu()
+            for (title, action) in [("Rotate Left", #selector(rotateLeft)), ("Rotate Right", #selector(rotateRight)),
+                                    ("Duplicate", #selector(duplicate)), ("Remove", #selector(remove))] {
+                let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+                item.target = self
+                menu.addItem(item)
+            }
+            return menu
+        }
+        @objc private func rotateLeft() { parent.onRotate(-90) }
+        @objc private func rotateRight() { parent.onRotate(90) }
+        @objc private func duplicate() { parent.onDuplicate() }
+        @objc private func remove() { parent.onRemove() }
+    }
+}
+
+private final class PageCollectionView: NSCollectionView {
+    var menuProvider: ((IndexPath) -> NSMenu?)?
+    override func layout() {
+        if let layout = collectionViewLayout as? NSCollectionViewFlowLayout, let width = enclosingScrollView?.contentView.bounds.width, width > 56 {
+            let columns = max(1, floor((width - 56 + 24) / (172 + 24)))
+            let size = NSSize(width: min(220, floor((width - 56 - (columns - 1) * 24) / columns)), height: 282)
+            if layout.itemSize != size { layout.itemSize = size }
+        }
+        super.layout()
+        // the document must fill its viewport before it can receive thumbnail mouse events
+        if let viewport = enclosingScrollView?.contentView.bounds, let layout = collectionViewLayout {
+            let height = max(viewport.height, layout.collectionViewContentSize.height)
+            if frame.height != height { setFrameSize(NSSize(width: frame.width, height: height)) }
+        }
+    }
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let index = indexPathForItem(at: convert(event.locationInWindow, from: nil)) else { return nil }
+        return menuProvider?(index)
+    }
+}
+
+// forward thumbnail mouse tracking to appkit instead of letting the hosting view consume it
+private final class PageCardHostingView: NSHostingView<AnyView> {
+    // appkit supplies this point in the superview's coordinates
+    override func hitTest(_ point: NSPoint) -> NSView? { frame.contains(point) ? self : nil }
+    private var collection: NSCollectionView? {
+        var ancestor = superview
+        while let view = ancestor {
+            if let collection = view as? NSCollectionView { return collection }
+            ancestor = view.superview
+        }
+        return nil
+    }
+    override func mouseDown(with event: NSEvent) {
+        if let collection {
+            collection.mouseDown(with: event)
+        }
+        else { super.mouseDown(with: event) }
+    }
+    override func mouseDragged(with event: NSEvent) {
+        if let collection { collection.mouseDragged(with: event) }
+        else { super.mouseDragged(with: event) }
+    }
+    override func mouseUp(with event: NSEvent) {
+        if let collection { collection.mouseUp(with: event) }
+        else { super.mouseUp(with: event) }
+    }
+    override func menu(for event: NSEvent) -> NSMenu? { collection?.menu(for: event) }
+}
+
+private final class PageCollectionItem: NSCollectionViewItem {
+    private var card: PDFPageCard?
+    // hosted cards have no appkit image outlet, so supply the native drag preview explicitly
+    override var draggingImageComponents: [NSDraggingImageComponent] {
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return [] }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let image = NSImage(size: view.bounds.size)
+        image.addRepresentation(bitmap)
+        let component = NSDraggingImageComponent(key: .icon)
+        component.contents = image
+        component.frame = view.bounds
+        return [component]
+    }
+    override func loadView() {
+        let hosting = PageCardHostingView(rootView: AnyView(EmptyView()))
+        hosting.sizingOptions = []
+        view = hosting
+    }
+    override var isSelected: Bool { didSet { refresh() } }
+    func configure(url: URL, edit: PDFPageEdit, position: Int, renderer: PDFThumbnailRenderer) {
+        card = PDFPageCard(url: url, edit: edit, position: position, selected: false, renderer: renderer)
+        refresh()
+    }
+    private func refresh() {
+        guard let card, let hosting = view as? PageCardHostingView else { return }
+        hosting.rootView = AnyView(PDFPageCard(url: card.url, edit: card.edit, position: card.position, selected: isSelected, renderer: card.renderer))
+    }
 }
