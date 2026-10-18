@@ -24,6 +24,28 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "acceptance is still locked"):
                 release.publish_release()
 
+    def test_source_checks_are_bound_to_the_reviewed_branch_and_commit(self):
+        plan = self.plan("dev")
+        with patch.object(release, "gh_json", return_value={"object": {"sha": plan["sha"]}}):
+            self.assertTrue(release.source_is_current(plan))
+        with patch.object(release, "gh_json", return_value={"object": {"sha": "b" * 40}}):
+            self.assertFalse(release.source_is_current(plan))
+        with patch.object(release, "gh_json") as query:
+            for invalid in [dict(plan, branch="updates"), dict(plan, sha="short")]:
+                with self.assertRaises(ValueError):
+                    release.source_is_current(invalid)
+            query.assert_not_called()
+
+    def test_superseded_runs_skip_build_planning_before_loading_credentials(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "output"
+            environment = {"GITHUB_REPOSITORY": release.REPOSITORY, "GITHUB_REF_NAME": "dev", "GITHUB_RUN_NUMBER": "1",
+                           "GITHUB_RUN_ATTEMPT": "1", "GITHUB_SHA": "a" * 40, "GITHUB_OUTPUT": str(output), "RUNNER_TEMP": temp}
+            with patch.dict(release.os.environ, environment), patch.object(release, "gh_json", return_value={"object": {"sha": "b" * 40}}):
+                release.plan_release()
+            self.assertEqual(output.read_text(), "current=false\n")
+            self.assertFalse((Path(temp) / "fileel-release/plan.json").exists())
+
     def test_rehearsal_tags_cannot_target_normal_release_tags(self):
         self.assertEqual(release.rehearsal_tag("1234", "2"), "ci-verification-1234-2")
         self.assertFalse(release.rehearsal_tag("1234", "2").startswith("v"))

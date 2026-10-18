@@ -10,7 +10,7 @@ The `Release` workflow runs after every push or merged pull request to `main` or
 ## Publication sequence
 
 1. Run the native build, engine tests, release-tool tests, secret scan and Swift CodeQL analysis
-2. Check the environment's first-release acceptance gate
+2. Check the environment's first-release acceptance gate and skip a superseded source before building
    Build the pinned runtime payload and its corresponding source archive before importing signing secrets, test conversions with that payload, and verify that usage did not change the office runtime's signature
 3. Import the expected Developer ID certificate into an ephemeral runner keychain
 4. Archive the exact source commit with a build number shared across both channels, then sign Sparkle's nested helpers, framework and enclosing app from the inside out
@@ -19,9 +19,11 @@ The `Release` workflow runs after every push or merged pull request to `main` or
 7. Create and sign the DMG, notarize it, staple it and verify its structure
 8. Sign the final DMG with Sparkle's Ed25519 key and verify against the public key shipped in Fileel
 9. Upload a draft release, download its DMG again and verify its hash and signature
-10. Sign the feed itself, publish the release, then advance only that channel's feed with an atomic fast-forward commit to `updates`
+10. Verify the existing feed's signature, sign the new feed, publish the release, then advance only that channel's feed with an atomic fast-forward commit to `updates`
 
-The bot never pushes to `main` or `dev`. The publication branch contains feed data only and does not trigger builds. Beta releases never replace GitHub's latest stable download. Runs are serialized across both channels; a superseded source commit or older build cannot advance the feed
+The bot never pushes to `main` or `dev`. The publication branch contains feed data only and does not trigger builds. Beta releases never replace GitHub's latest stable download. Each channel has its own delivery queue, so a beta push cannot replace the stable channel's pending run. Within one channel, GitHub retains the latest pending run according to its [documented concurrency behavior](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+
+The two channels can finish in either order. Each feed rejects stale versions independently; switching channels still follows Sparkle's no-downgrade rule. If another publisher advances `updates` while a feed is being signed, the losing publisher fetches the new head, verifies its channel's existing signature and reapplies only its own entry. It retries without force-pushing or rewriting the other channel. Replaying the same artifact succeeds without adding a duplicate item; conflicting metadata or an altered existing feed fails closed
 
 ## Credentials
 
@@ -33,7 +35,7 @@ Configure these as **environment secrets** in both `production` and `beta`. Do n
 | `FILEEL_CERTIFICATE_PASSWORD` | Password protecting that PKCS#12 export |
 | `ASC_KEY_ID` | Existing App Store Connect team key's identifier |
 | `ASC_ISSUER_ID` | That team's issuer identifier |
-| `ASC_PRIVATE_KEY` | Base64 of the existing `.p8` file, matching the Balanço configuration |
+| `ASC_PRIVATE_KEY` | Base64 of the existing App Store Connect `.p8` file |
 | `FILEEL_SPARKLE_PRIVATE_KEY` | Sparkle's private-key export string, without another base64 layer |
 
 The signing certificate must belong to team `TQ87ZCU6H5`. Validate the API key's team and notarization permissions before configuring CI. GitHub does not let administrators download existing secret values from another repository; use their original local credentials
@@ -45,6 +47,8 @@ The runner deletes the temporary keychain and key files even when signing or not
 Each environment has `FILEEL_RELEASE_READY=false` until the actual installed-app update test and clean-Mac acceptance pass. Missing credentials, engines, signatures or Apple acceptance fail publication. Enable the variable only after those checks have succeeded; setting it is not a substitute for running them
 
 A manual `Release` run defaults to verification only. On the reviewed `main` or `dev` branch, it builds, signs and notarizes the complete app and DMG using that branch's protected environment. It uploads a temporary private draft, downloads every asset to verify hashes and the update signature, then removes only that run's uniquely named draft/tag. It never changes either appcast. This can validate credentials and delivery before enabling the public-release gate; it does not replace an installed-app update test. Set the manual `publish_update` input only when a public release is intended and its gate is already enabled
+
+Private verification also creates an isolated `ci-feed-verification-*` branch. Two publishers sign feed fixtures and race against the same GitHub branch head. The losing push must refresh and retry, both signed feeds must survive, and replaying the same artifact must leave one item. Downloaded feed bytes are verified with Sparkle's signing tool. The workflow removes only the branch it created and refuses cleanup if an unexpected writer changes it. These fixture feeds never replace `updates` or advertise a customer release
 
 While the public gate is off, pushes to the reviewed branches run the same private delivery verification automatically. This exercises the real signing/notarization/upload path before the first public download, rather than treating an intentionally skipped build as acceptance. Enabling the gate changes subsequent pushes to public delivery; an explicit manual publication request with the gate off still fails closed
 
