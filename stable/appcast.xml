@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
 IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><rss version="2.0">
+--><rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
   <channel>
+    <item>
+      <title>Fileel 0.0.1 (112.2)</title>
+      <pubDate>Sun, 18 Oct 2026 16:25:04 +0000</pubDate>
+      <sparkle:version>112.2</sparkle:version>
+      <sparkle:shortVersionString>0.0.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <link>https://github.com/thiagonarcizo/Fileel/releases/tag/v0.0.1-112.2</link>
+      <description>See the release notes for changes in this version.</description>
+      <enclosure url="https://github.com/thiagonarcizo/Fileel/releases/download/v0.0.1-112.2/Fileel-0.0.1-112.2-stable-arm64.dmg" type="application/octet-stream" length="388346875" sparkle:edSignature="hD3xy0Wc6fHp4xwqg/7xpmEprvUQrY5h9QmsKnk+RQXxsWtB7rxgSmocSkMnlXcWyE4dhUsBS/hvH9MD3LaBBA=="></enclosure>
+    </item>
     <title>Fileel</title>
     <description>Verified Fileel updates for Apple Silicon</description>
     <language>en</language>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: hXPDOem1s3vU97es4W9rUWQQhg0fkMWbSq9+hxCRyFCDaO0dKTZXheI6XA6mn1t4HOlc3wSs18xz96A1ouqICw==
-length: 469
+edSignature: 8/WRALby6VuOCE/iUo8tJwp0i4UR0PLxKYYaUw5DA4b+Q8qafAc2zi/CnYjguQ8BxOplczgXVcrHOLFypK+/AQ==
+length: 1321
 -->
