@@ -46,6 +46,8 @@ Each environment has `FILEEL_RELEASE_READY=false` until the actual installed-app
 
 A manual `Release` run defaults to verification only. On the reviewed `main` or `dev` branch, it builds, signs and notarizes the complete app and DMG using that branch's protected environment. It uploads a temporary private draft, downloads every asset to verify hashes and the update signature, then removes only that run's uniquely named draft/tag. It never changes either appcast. This can validate credentials and delivery before enabling the public-release gate; it does not replace an installed-app update test. Set the manual `publish_update` input only when a public release is intended and its gate is already enabled
 
+While the public gate is off, pushes to the reviewed branches run the same private delivery verification automatically. This exercises the real signing/notarization/upload path before the first public download, rather than treating an intentionally skipped build as acceptance. Enabling the gate changes subsequent pushes to public delivery; an explicit manual publication request with the gate off still fails closed
+
 The owner reviews and merges a pull request to release it. Environment branch restrictions allow `production` only from `main`, and `beta` only from `dev`. This avoids requiring a second manual deployment approval after an already-authorized merge
 
 ## Installed apps

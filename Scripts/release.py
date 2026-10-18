@@ -285,8 +285,8 @@ def rehearsal_tag(run_id, attempt):
 def rehearse_release():
     directory = workspace()
     plan = json.loads((directory / "plan.json").read_text())
-    if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch" or os.environ.get("GITHUB_REPOSITORY") != REPOSITORY:
-        raise ValueError("private distribution verification requires an upstream manual run")
+    if os.environ.get("GITHUB_EVENT_NAME") not in ("workflow_dispatch", "push") or os.environ.get("GITHUB_REPOSITORY") != REPOSITORY:
+        raise ValueError("private distribution verification requires an upstream delivery run")
     if plan["sha"] != os.environ.get("GITHUB_SHA") or plan["branch"] not in ("main", "dev"):
         raise ValueError("the verification source does not match the reviewed branch")
     tag = rehearsal_tag(os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"])
