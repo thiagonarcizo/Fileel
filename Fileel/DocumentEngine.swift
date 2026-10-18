@@ -53,11 +53,11 @@ enum DocumentEngine {
                     }
                 }
             }
-            let text = try PDFEngine.text(input, runner: runner)
             if format == "xlsx" {
-                try OfficePackage.workbook(text: text, output: output, runner: runner)
+                try PDFSpreadsheetEngine.convert(input, output: output, runner: runner)
                 return output
             }
+            let text = try PDFEngine.text(input, runner: runner)
             if ["txt", "md"].contains(format) {
                 try text.write(to: output, atomically: true, encoding: .utf8)
                 return output
@@ -187,20 +187,6 @@ enum OfficePackage {
 
     static func pack(_ root: URL, output: URL, runner: ProcessRunner) throws {
         try runner.run(URL(fileURLWithPath: "/usr/bin/ditto"), ["-c", "-k", "--norsrc", "--noextattr", root.path, output.path])
-    }
-
-    static func workbook(text: String, output: URL, runner: ProcessRunner) throws {
-        let root = output.deletingLastPathComponent().appendingPathComponent("xlsx-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: root) }
-        try xml("<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/></Types>", at: "[Content_Types].xml", root: root)
-        try xml("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>", at: "_rels/.rels", root: root)
-        try xml("<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets><sheet name=\"PDF Text\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>", at: "xl/workbook.xml", root: root)
-        try xml("<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/></Relationships>", at: "xl/_rels/workbook.xml.rels", root: root)
-        let rows = text.components(separatedBy: .newlines).enumerated().map { index, line in
-            "<row r=\"\(index + 1)\"><c r=\"A\(index + 1)\" t=\"inlineStr\"><is><t xml:space=\"preserve\">\(escape(line))</t></is></c></row>"
-        }.joined()
-        try xml("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>\(rows)</sheetData></worksheet>", at: "xl/worksheets/sheet1.xml", root: root)
-        try pack(root, output: output, runner: runner)
     }
 
     static func slides(from input: URL, output: URL, runner: ProcessRunner) throws {
